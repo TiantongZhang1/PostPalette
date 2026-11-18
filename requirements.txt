@@ -1,6 +1,5 @@
 accelerate>=1.1,<2
 diffusers==0.39.0
-emoji>=2.14,<3
 Pillow>=10.4,<13
 rembg[cpu]==2.0.87
 sentencepiece>=0.2,<1

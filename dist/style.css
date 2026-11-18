@@ -41,9 +41,11 @@ textarea::placeholder { color: #716884; }
 .secondary { border: 1px solid #e1d8ef; background: #f7f2ff; color: var(--purple); }
 .secondary:not(:disabled):hover { background: #ede2ff; }
 .recommendations { margin-top: 22px; border-top: 1px solid var(--border); padding-top: 17px; }
-.emojis { display: flex; gap: 10px; }
-.emoji { display: grid; place-items: center; background: #fcfaff; border: 1px solid #e8dff2; border-radius: 12px; width: 53px; height: 51px; font: 27px "Segoe UI Emoji", "Apple Color Emoji", sans-serif; }
-.emoji:hover { background: #f0e6ff; }
+.memes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.meme { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.meme a { color: var(--purple); font-size: 12px; overflow-wrap: anywhere; font-weight: 700; }
+.meme img { display: block; width: 100%; aspect-ratio: 1; object-fit: contain; margin-bottom: 6px; border-radius: 9px; background: #f4effb; }
+.meme button { align-self: flex-start; margin-top: auto; }
 .hint, footer, .status { font-size: 12px; }
 .check { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 13px; }
 .check input { accent-color: var(--purple); }

@@ -18,7 +18,7 @@ os.environ.setdefault("U2NET_HOME", str(CACHE / "u2net"))
 
 from models import DIFFUSION, ENCODER, LLM, SEGMENTER, ModelError, generate_image, suggest
 
-DEPENDENCIES = ("accelerate", "diffusers", "emoji", "onnxruntime", "PIL", "rembg", "sentencepiece", "torch", "transformers")
+DEPENDENCIES = ("accelerate", "diffusers", "onnxruntime", "PIL", "rembg", "sentencepiece", "torch", "transformers")
 FILES = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/index.html": ("index.html", "text/html; charset=utf-8"),
@@ -45,7 +45,8 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(content)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Content-Security-Policy", "default-src 'self'; img-src 'self' blob:; frame-ancestors 'none'")
+        self.send_header("Content-Security-Policy", "default-src 'self'; img-src 'self' blob: https://i.imgflip.com; frame-ancestors 'none'")
+        self.send_header("Referrer-Policy", "no-referrer")
         for name, value in headers.items():
             self.send_header(name, str(value))
         self.end_headers()

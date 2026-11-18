@@ -14,8 +14,8 @@
   </div></header>
   <main class="shell">
     <section class="intro">
-      <h1>给你的帖子<span>配个表情。</span></h1>
-      <p>贴上一段文字，挑几个 emoji，再做一张配图或透明贴纸。</p>
+      <h1>给你的帖子<span>配张梗图。</span></h1>
+      <p>贴上一段文字，找适合的网络梗图，或生成自己的配图与贴纸。</p>
     </section>
     <div class="workspace">
       <section class="card editor">
@@ -23,18 +23,18 @@
         <label for="post">原文</label>
         <textarea id="post" rows="5" maxlength="1000" placeholder="输入或粘贴一段帖子…"></textarea>
         <div class="input-footer"><button id="sample" class="link" type="button">试用示例 ↗</button><span id="count">0 / 1000</span></div>
-        <button class="primary" id="analyze" type="button">✦ 推荐 Emoji</button>
+        <button class="primary" id="analyze" type="button">✦ 推荐梗图</button>
         <div class="recommendations">
-          <h3>Emoji 建议</h3>
-          <div id="emojis" class="emojis"></div>
-          <p class="hint" id="sentiment">生成建议后，点击任意 emoji 即可复制。</p>
+          <h3>推荐结果</h3>
+          <div id="memes" class="memes"></div>
+          <p class="hint" id="sentiment">推荐结果来自 Imgflip，可以打开来源或复制图片链接。</p>
           <label class="check"><input id="use-sentiment" type="checkbox" checked> 使用情绪模型辅助推荐</label>
         </div>
       </section>
       <section class="card output">
         <h2>图片工作台</h2>
         <label for="prompt" class="field-label">绘图提示词</label>
-        <textarea id="prompt" rows="2" maxlength="700" placeholder="生成 emoji 时会一起拟好，也可以直接输入英文提示词。"></textarea>
+        <textarea id="prompt" rows="2" maxlength="700" placeholder="推荐梗图时会一并生成，也可以直接输入英文提示词。"></textarea>
         <div class="image-options">
           <label class="field-label" for="style">风格
             <select id="style">
@@ -63,7 +63,7 @@
       </section>
     </div>
     <p id="status" class="status" role="status"></p>
-    <footer>帖子和图片在本机处理。首次推理会下载模型，耗时可能较长。</footer>
+    <footer>帖子在本机分析。联网获取 Imgflip 目录并加载预览图。首次推理会下载模型。</footer>
   </main>
 </body>
 </html>

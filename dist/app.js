@@ -30,8 +30,8 @@ function clearImage() {
 
 function resetForPost() {
   byId("count").textContent = post.value.length + " / 1000";
-  byId("emojis").replaceChildren();
-  sentiment.textContent = "生成建议后，点击任意 emoji 即可复制。";
+  byId("memes").replaceChildren();
+  sentiment.textContent = "推荐结果来自 Imgflip，可以打开来源或复制图片链接。";
   prompt.value = "";
   clearImage();
   say("");
@@ -70,27 +70,34 @@ async function run(message, action) {
   }
 }
 
-function showEmojis(icons) {
-  byId("emojis").replaceChildren(...icons.map((icon) => {
+function showMemes(memes) {
+  byId("memes").replaceChildren(...memes.map((meme) => {
+    const card = document.createElement("article");
+    card.className = "meme";
+    const link = document.createElement("a");
+    link.href = meme.source_url;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    const image = document.createElement("img");
+    image.alt = "";
+    image.src = meme.image_url;
+    image.addEventListener("error", () => { image.hidden = true; });
+    link.append(image, meme.name);
     const button = document.createElement("button");
-    button.className = "emoji";
+    button.className = "link";
     button.type = "button";
-    button.textContent = icon;
-    button.setAttribute("aria-label", "复制 " + icon);
+    button.textContent = "复制图片链接";
+    button.setAttribute("aria-label", "复制 " + meme.name + " 的图片链接");
     button.addEventListener("click", async () => {
       try {
-        await navigator.clipboard.writeText(icon);
-        say("已复制 " + icon);
+        await navigator.clipboard.writeText(meme.image_url);
+        say("已复制 " + meme.name + " 的图片链接。");
       } catch {
-        const selection = window.getSelection();
-        const range = document.createRange();
-        range.selectNodeContents(button);
-        selection.removeAllRanges();
-        selection.addRange(range);
-        say("已选中 " + icon + "，按 Ctrl+C 或 ⌘C 复制。");
+        say("浏览器未允许复制，可以点梗图标题打开来源。", true);
       }
     });
-    return button;
+    card.append(link, button);
+    return card;
   }));
 }
 
@@ -125,17 +132,17 @@ byId("analyze").addEventListener("click", () => {
     post.focus();
     return;
   }
-  run("正在分析帖子并撰写提示词，首次使用可能需要下载模型…", async () => {
+  run("正在匹配网络梗图并撰写提示词，首次使用可能需要下载模型…", async () => {
     const response = await request("/api/suggest", { post: post.value, use_sentiment: useSentiment.checked });
     const result = await response.json();
-    showEmojis(result.emojis);
+    showMemes(result.memes);
     prompt.value = result.prompt;
     clearImage();
     sentiment.textContent = result.sentiment
       ? "情绪模型判断为" + (sentimentLabels[result.sentiment.label] || result.sentiment.label)
         + "（置信度 " + Math.round(result.sentiment.score * 100) + "%）"
-      : "本次建议仅使用语言模型。";
-    say("已生成 3 个 emoji 建议和绘图提示词。");
+      : "本次推荐未启用情绪参考。";
+    say("已推荐 3 张 Imgflip 梗图，并生成绘图提示词。");
   });
 });
 
@@ -149,7 +156,7 @@ for (const control of [prompt, seed, style, ...modes]) {
 
 byId("generate").addEventListener("click", () => {
   if (!prompt.value.trim()) {
-    say("先推荐 Emoji 以生成提示词，或直接输入绘图提示词。", true);
+    say("先推荐梗图以生成提示词，或直接输入绘图提示词。", true);
     prompt.focus();
     return;
   }
