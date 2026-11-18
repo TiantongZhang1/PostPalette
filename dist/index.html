@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PostPalette · 帖子配图工作台</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="top"><div class="shell bar">
+    <div class="brand"><span class="logo" aria-hidden="true">✦</span> PostPalette</div>
+    <span class="badge" id="connection">检查本地服务…</span>
+  </div></header>
+  <main class="shell">
+    <section class="intro">
+      <h1>给你的帖子<span>配个表情。</span></h1>
+      <p>贴上一段文字，挑几个 emoji，再做一张配图或透明贴纸。</p>
+    </section>
+    <div class="workspace">
+      <section class="card editor">
+        <h2>帖子内容</h2>
+        <label for="post">原文</label>
+        <textarea id="post" rows="5" maxlength="1000" placeholder="输入或粘贴一段帖子…"></textarea>
+        <div class="input-footer"><button id="sample" class="link" type="button">试用示例 ↗</button><span id="count">0 / 1000</span></div>
+        <button class="primary" id="analyze" type="button">✦ 推荐 Emoji</button>
+        <div class="recommendations">
+          <h3>Emoji 建议</h3>
+          <div id="emojis" class="emojis"></div>
+          <p class="hint" id="sentiment">生成建议后，点击任意 emoji 即可复制。</p>
+          <label class="check"><input id="use-sentiment" type="checkbox" checked> 使用情绪模型辅助推荐</label>
+        </div>
+      </section>
+      <section class="card output">
+        <h2>图片工作台</h2>
+        <label for="prompt" class="field-label">绘图提示词</label>
+        <textarea id="prompt" rows="2" maxlength="700" placeholder="生成 emoji 时会一起拟好，也可以直接输入英文提示词。"></textarea>
+        <div class="image-options">
+          <label class="field-label" for="style">风格
+            <select id="style">
+              <option value="illustration">插画</option>
+              <option value="photo">摄影</option>
+              <option value="cartoon">卡通</option>
+            </select>
+          </label>
+          <label class="field-label" for="seed">种子
+            <input id="seed" type="number" min="0" max="4294967295" step="1" placeholder="留空随机">
+          </label>
+        </div>
+        <fieldset class="switch">
+          <legend class="sr-only">图片类型</legend>
+          <label><input type="radio" name="format" value="cover" checked><span>配图</span></label>
+          <label><input type="radio" name="format" value="sticker"><span>透明贴纸</span></label>
+        </fieldset>
+        <div id="preview" class="preview">
+          <img id="art" hidden alt="根据绘图提示词生成的图片">
+          <div id="placeholder"><strong aria-hidden="true">✦</strong><p>生成后的图片会显示在这里</p></div>
+        </div>
+        <div class="output-actions">
+          <button class="secondary" id="generate" type="button">生成图片</button>
+          <button class="secondary" id="download" type="button" disabled>↓ 下载 PNG</button>
+        </div>
+      </section>
+    </div>
+    <p id="status" class="status" role="status"></p>
+    <footer>帖子和图片在本机处理。首次推理会下载模型，耗时可能较长。</footer>
+  </main>
+</body>
+</html>
