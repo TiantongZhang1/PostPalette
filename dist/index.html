@@ -15,7 +15,7 @@
   <main class="shell">
     <section class="intro">
       <h1>给你的帖子<span>配张梗图。</span></h1>
-      <p>贴上一段文字，找适合的网络梗图，或生成自己的配图与贴纸。</p>
+      <p>贴上一段文字，找适合的网络梗图，再生成一张涂鸦贴纸。</p>
     </section>
     <div class="workspace">
       <section class="card editor">
@@ -32,15 +32,26 @@
         </div>
       </section>
       <section class="card output">
-        <h2>图片工作台</h2>
-        <label for="prompt" class="field-label">绘图提示词</label>
-        <textarea id="prompt" rows="2" maxlength="700" placeholder="推荐梗图时会一并生成，也可以直接输入英文提示词。"></textarea>
+        <h2>涂鸦工作台</h2>
+        <label for="caption" class="field-label">配文</label>
+        <textarea id="caption" rows="2" maxlength="160" placeholder="推荐梗图时会一起拟好，配文可编辑和复制。"></textarea>
+        <button id="copy-caption" class="link" type="button">复制配文</button>
+        <label for="category" class="field-label category-label">涂鸦类别</label>
+        <select id="category">
+          <option value="smiley face">笑脸</option>
+          <option value="cat">猫</option>
+          <option value="coffee cup">咖啡杯</option>
+          <option value="sun">太阳</option>
+          <option value="flower">花</option>
+          <option value="birthday cake">生日蛋糕</option>
+        </select>
+        <p class="hint">图像由类别和种子控制，配文可单独复制。</p>
         <div class="image-options">
-          <label class="field-label" for="style">风格
-            <select id="style">
-              <option value="illustration">插画</option>
-              <option value="photo">摄影</option>
-              <option value="cartoon">卡通</option>
+          <label class="field-label" for="color">线条颜色
+            <select id="color">
+              <option value="#5936b8">紫色</option>
+              <option value="#25203c">墨色</option>
+              <option value="#d94f88">粉色</option>
             </select>
           </label>
           <label class="field-label" for="seed">种子
@@ -53,7 +64,7 @@
           <label><input type="radio" name="format" value="sticker"><span>透明贴纸</span></label>
         </fieldset>
         <div id="preview" class="preview">
-          <img id="art" hidden alt="根据绘图提示词生成的图片">
+          <img id="art" hidden alt="按所选类别生成的涂鸦">
           <div id="placeholder"><strong aria-hidden="true">✦</strong><p>生成后的图片会显示在这里</p></div>
         </div>
         <div class="output-actions">
@@ -63,7 +74,7 @@
       </section>
     </div>
     <p id="status" class="status" role="status"></p>
-    <footer>帖子在本机分析。联网获取 Imgflip 目录并加载预览图。首次推理会下载模型。</footer>
+    <footer>帖子在本机分析。联网获取 Imgflip 目录并加载预览图。涂鸦模型需先完成本地训练。</footer>
   </main>
 </body>
 </html>

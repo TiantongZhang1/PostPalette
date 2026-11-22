@@ -1,8 +1,9 @@
 const byId = (id) => document.getElementById(id);
 const post = byId("post");
-const prompt = byId("prompt");
+const caption = byId("caption");
+const category = byId("category");
 const seed = byId("seed");
-const style = byId("style");
+const color = byId("color");
 const status = byId("status");
 const art = byId("art");
 const download = byId("download");
@@ -10,8 +11,11 @@ const sentiment = byId("sentiment");
 const useSentiment = byId("use-sentiment");
 const connection = byId("connection");
 const modes = [...document.querySelectorAll('input[name="format"]')];
-const controls = [post, prompt, seed, style, useSentiment, ...modes, byId("sample"), byId("analyze"), byId("generate")];
-const sentimentLabels = { positive: "正向", neutral: "中性", negative: "负向" };
+const controls = [post, caption, category, seed, color, useSentiment, ...modes, byId("sample"), byId("analyze"), byId("generate")];
+const sentimentLabels = {
+  joy: "喜悦", sadness: "悲伤", anger: "愤怒", fear: "恐惧",
+  surprise: "惊讶", affection: "关爱", neutral: "中性", other: "其他",
+};
 let imageUrl = null;
 
 function say(message, error = false) {
@@ -32,7 +36,7 @@ function resetForPost() {
   byId("count").textContent = post.value.length + " / 1000";
   byId("memes").replaceChildren();
   sentiment.textContent = "推荐结果来自 Imgflip，可以打开来源或复制图片链接。";
-  prompt.value = "";
+  caption.value = "";
   clearImage();
   say("");
 }
@@ -110,10 +114,14 @@ async function checkConnection() {
     if (location.protocol === "file:") throw new Error();
     const response = await fetch("/api/health");
     if (!response.ok) throw new Error();
-    const { missing } = await response.json();
-    connection.textContent = missing.length ? "缺少模型依赖" : "本地服务已连接";
-    connection.dataset.state = missing.length ? "error" : "";
-    connection.title = missing.join(", ");
+    const { missing, checkpoints } = await response.json();
+    const untrained = Object.entries(checkpoints).filter(([, ready]) => !ready).map(([name]) => name);
+    connection.textContent = missing.length ? "缺少模型依赖" : untrained.length ? "等待模型训练" : "本地服务已连接";
+    connection.dataset.state = missing.length || untrained.length ? "error" : "";
+    connection.title = missing.length ? missing.join(", ") : "待训练模型 " + untrained.join(", ");
+    if (!missing.length && untrained.length) {
+      say("模型训练尚未完成。可取消情绪辅助后使用梗图推荐，涂鸦生成需等待训练。");
+    }
   } catch {
     connection.textContent = "请启动本地服务";
     connection.dataset.state = "error";
@@ -132,22 +140,23 @@ byId("analyze").addEventListener("click", () => {
     post.focus();
     return;
   }
-  run("正在匹配网络梗图并撰写提示词，首次使用可能需要下载模型…", async () => {
+  run("正在匹配网络梗图并选择涂鸦类别，首次使用可能需要下载 Qwen…", async () => {
     const response = await request("/api/suggest", { post: post.value, use_sentiment: useSentiment.checked });
     const result = await response.json();
     showMemes(result.memes);
-    prompt.value = result.prompt;
+    caption.value = result.caption;
+    category.value = result.category;
     clearImage();
     sentiment.textContent = result.sentiment
       ? "情绪模型判断为" + (sentimentLabels[result.sentiment.label] || result.sentiment.label)
-        + "（置信度 " + Math.round(result.sentiment.score * 100) + "%）"
+        + "（模型分数 " + Math.round(result.sentiment.score * 100) + "%）"
       : "本次推荐未启用情绪参考。";
-    say("已推荐 3 张 Imgflip 梗图，并生成绘图提示词。");
+    say("已推荐 3 张 Imgflip 梗图，并选择涂鸦类别与配文。");
   });
 });
 
-for (const control of [prompt, seed, style, ...modes]) {
-  control.addEventListener(control === prompt || control === seed ? "input" : "change", () => {
+for (const control of [category, seed, color, ...modes]) {
+  control.addEventListener(control === seed ? "input" : "change", () => {
     byId("preview").classList.toggle("sticker", mode() === "sticker");
     clearImage();
     say("");
@@ -155,25 +164,37 @@ for (const control of [prompt, seed, style, ...modes]) {
 }
 
 byId("generate").addEventListener("click", () => {
-  if (!prompt.value.trim()) {
-    say("先推荐梗图以生成提示词，或直接输入绘图提示词。", true);
-    prompt.focus();
-    return;
-  }
   if (!seed.reportValidity()) return;
   const sticker = mode() === "sticker";
   clearImage();
-  run(sticker ? "正在生成图片并分离贴纸主体…" : "正在用扩散模型生成图片…", async () => {
+  run("正在生成涂鸦，并按类别识别分数选择候选…", async () => {
     const response = await request("/api/image", {
-      prompt: prompt.value, style: style.value, mode: mode(), seed: seed.value === "" ? null : seed.valueAsNumber,
+      category: category.value, color: color.value, mode: mode(), seed: seed.value === "" ? null : seed.valueAsNumber,
     });
     imageUrl = URL.createObjectURL(await response.blob());
     art.src = imageUrl;
     art.hidden = false;
     byId("placeholder").hidden = true;
     download.disabled = false;
-    say((sticker ? "透明贴纸已生成。" : "配图已生成。") + " 本次种子 " + response.headers.get("X-Image-Seed"));
+    const score = Math.round(Number(response.headers.get("X-Category-Score")) * 100);
+    say((sticker ? "透明贴纸已生成。" : "配图已生成。") + " 种子 " + response.headers.get("X-Image-Seed")
+      + "，类别识别分数 " + score + "%。");
   });
+});
+
+byId("copy-caption").addEventListener("click", async () => {
+  if (!caption.value.trim()) {
+    say("先生成或输入一段配文。", true);
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(caption.value);
+    say("已复制配文。");
+  } catch {
+    caption.focus();
+    caption.select();
+    say("已选中配文，按 Ctrl+C 或 ⌘C 复制。");
+  }
 });
 
 download.addEventListener("click", () => {

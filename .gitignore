@@ -1,3 +1,5 @@
 .venv/
 .model-cache/
 __pycache__/
+data/
+artifacts/

@@ -14,11 +14,11 @@ from urllib.parse import urlsplit
 ROOT = Path(__file__).resolve().parent
 CACHE = ROOT / ".model-cache"
 os.environ.setdefault("HF_HOME", str(CACHE / "huggingface"))
-os.environ.setdefault("U2NET_HOME", str(CACHE / "u2net"))
 
-from models import DIFFUSION, ENCODER, LLM, SEGMENTER, ModelError, generate_image, suggest
+from models import LLM, ModelError, generate_image, suggest, training_status
+from scratch.config import CATEGORIES
 
-DEPENDENCIES = ("accelerate", "diffusers", "onnxruntime", "PIL", "rembg", "sentencepiece", "torch", "transformers")
+DEPENDENCIES = ("accelerate", "numpy", "PIL", "torch", "transformers")
 FILES = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/index.html": ("index.html", "text/html; charset=utf-8"),
@@ -75,7 +75,9 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
         elif path == "/api/health":
             self.send_json({
                 "missing": missing_dependencies(),
-                "models": {"encoder": ENCODER, "llm": LLM, "diffusion": DIFFUSION, "segmenter": SEGMENTER},
+                "models": {"encoder": "scratch EmotionEncoder", "llm": LLM,
+                           "generator": "scratch ConditionalVAE", "classifier": "scratch DoodleCNN"},
+                "checkpoints": training_status(),
             })
         else:
             self.send_json({"error": "路径不存在。"}, HTTPStatus.NOT_FOUND)
@@ -114,19 +116,19 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
                 self.send_json(result)
                 return
 
-            prompt = field(data, "prompt", 700)
-            style = data.get("style")
+            category = data.get("category")
+            color = data.get("color")
             mode = data.get("mode")
             seed = data.get("seed")
-            if style not in ("illustration", "photo", "cartoon") or mode not in ("cover", "sticker"):
-                raise ValueError("请选择有效的风格和图片类型。")
+            if category not in CATEGORIES or color not in ("#5936b8", "#25203c", "#d94f88") or mode not in ("cover", "sticker"):
+                raise ValueError("请选择有效的涂鸦类别、颜色和图片类型。")
             if seed is None:
                 seed = randbelow(2**32)
             if type(seed) is not int or not 0 <= seed < 2**32:
                 raise ValueError("种子必须是 0 至 4294967295 之间的整数。")
             self.ensure_dependencies()
-            image = generate_image(prompt, style, mode == "sticker", seed)
-            self.send_bytes(image, "image/png", **{"X-Image-Seed": seed})
+            image, score = generate_image(category, color, mode == "sticker", seed)
+            self.send_bytes(image, "image/png", **{"X-Image-Seed": seed, "X-Category-Score": f"{score:.4f}"})
         except (BrokenPipeError, ConnectionResetError):
             return
         except ValueError as error:

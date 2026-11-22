@@ -49,7 +49,9 @@ textarea::placeholder { color: #716884; }
 .hint, footer, .status { font-size: 12px; }
 .check { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 13px; }
 .check input { accent-color: var(--purple); }
-#prompt { min-height: 68px; }
+#caption { min-height: 68px; }
+.category-label { display: block; margin-top: 15px; }
+#category { width: 100%; margin-top: 7px; padding: 9px; border: 1px solid #ddd4eb; border-radius: 8px; font: inherit; background: #fcfbfe; color: var(--ink); }
 .image-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
 .image-options label { min-width: 0; }
 .image-options select, .image-options input { display: block; margin-top: 5px; width: 100%; padding: 8px; border: 1px solid #ddd4eb; border-radius: 8px; background: #fcfbfe; color: var(--ink); font: inherit; }
