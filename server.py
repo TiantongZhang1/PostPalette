@@ -15,8 +15,11 @@ ROOT = Path(__file__).resolve().parent
 CACHE = ROOT / ".model-cache"
 os.environ.setdefault("HF_HOME", str(CACHE / "huggingface"))
 
-from models import LLM, ModelError, generate_image, suggest, training_status
+from models import LLM, ModelError, generate_image, generate_prompt, suggest, training_status
+from image_api import generate_api_image, image_status, load_environment
 from scratch.config import CATEGORIES
+
+load_environment()
 
 DEPENDENCIES = ("accelerate", "numpy", "PIL", "torch", "transformers")
 FILES = {
@@ -76,8 +79,11 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             self.send_json({
                 "missing": missing_dependencies(),
                 "models": {"encoder": "scratch EmotionEncoder", "llm": LLM,
-                           "generator": "scratch ConditionalVAE", "classifier": "scratch DoodleCNN"},
+                           "generator": "scratch ConditionalVAE", "classifier": "scratch DoodleCNN",
+                           "prompt": "scratch GRU attention/copy encoder-decoder",
+                           "scene": "external OpenAI GPT Image API"},
                 "checkpoints": training_status(),
+                "image_api": image_status(),
             })
         else:
             self.send_json({"error": "路径不存在。"}, HTTPStatus.NOT_FOUND)
@@ -100,12 +106,22 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
         if not self.allowed_request():
             return
         path = urlsplit(self.path).path
-        if path not in ("/api/suggest", "/api/image"):
+        if path not in ("/api/suggest", "/api/image", "/api/prompt", "/api/gpt-image"):
             self.send_json({"error": "路径不存在。"}, HTTPStatus.NOT_FOUND)
             return
 
         try:
             data = self.read_payload()
+            if path == "/api/prompt":
+                post = field(data, "post", 1000)
+                self.ensure_dependencies()
+                self.send_json(generate_prompt(post))
+                return
+            if path == "/api/gpt-image":
+                prompt = field(data, "prompt", 4000)
+                image, model = generate_api_image(prompt)
+                self.send_bytes(image, "image/png", **{"X-Image-Model": model})
+                return
             if path == "/api/suggest":
                 post = field(data, "post", 1000)
                 use_sentiment = data.get("use_sentiment", True)

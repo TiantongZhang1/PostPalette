@@ -15,7 +15,7 @@
   <main class="shell">
     <section class="intro">
       <h1>给你的帖子<span>配张梗图。</span></h1>
-      <p>贴上一段文字，找适合的网络梗图，再生成一张涂鸦贴纸。</p>
+      <p>贴上一段文字，找适合的网络梗图，或为这段经历生成一张配图。</p>
     </section>
     <div class="workspace">
       <section class="card editor">
@@ -32,7 +32,22 @@
         </div>
       </section>
       <section class="card output">
-        <h2>涂鸦工作台</h2>
+        <h2>图片工作台</h2>
+        <label for="generator" class="field-label">生成方式</label>
+        <select id="generator">
+          <option value="scene">GPT 场景配图</option>
+          <option value="doodle">涂鸦贴纸</option>
+        </select>
+        <div id="scene-options">
+          <p class="hint" id="api-status">正在检查图像 API 配置…</p>
+          <button id="build-prompt" class="secondary" type="button">① 根据帖子生成提示词</button>
+          <p class="hint" id="prompt-info">先填写左侧帖子，再生成并检查提示词。</p>
+          <details id="prompt-details" hidden><summary>查看模型生成的场景草稿</summary><p class="hint" id="prompt-draft"></p></details>
+          <label for="scene-prompt" class="field-label category-label">发送给 GPT 的提示词（可编辑）</label>
+          <textarea id="scene-prompt" rows="5" maxlength="4000" placeholder="点击上方按钮生成，或输入你自己的画面描述。"></textarea>
+          <p class="hint">点击「生成图片」会将此提示词发送至 OpenAI，按 API 用量计费。输出 1024×1024，生成内容可能与事实有差异。</p>
+        </div>
+        <div id="doodle-options" hidden>
         <label for="caption" class="field-label">配文</label>
         <textarea id="caption" rows="2" maxlength="160" placeholder="推荐梗图时会一起拟好，配文可编辑和复制。"></textarea>
         <button id="copy-caption" class="link" type="button">复制配文</button>
@@ -54,17 +69,19 @@
               <option value="#d94f88">粉色</option>
             </select>
           </label>
-          <label class="field-label" for="seed">种子
-            <input id="seed" type="number" min="0" max="4294967295" step="1" placeholder="留空随机">
-          </label>
         </div>
         <fieldset class="switch">
           <legend class="sr-only">图片类型</legend>
           <label><input type="radio" name="format" value="cover" checked><span>配图</span></label>
           <label><input type="radio" name="format" value="sticker"><span>透明贴纸</span></label>
         </fieldset>
+        </div>
+        <div id="seed-options" hidden>
+        <label class="field-label category-label" for="seed">涂鸦种子</label>
+        <input id="seed" type="number" min="0" max="4294967295" step="1" placeholder="留空随机">
+        </div>
         <div id="preview" class="preview">
-          <img id="art" hidden alt="按所选类别生成的涂鸦">
+          <img id="art" hidden alt="根据描述生成的图片">
           <div id="placeholder"><strong aria-hidden="true">✦</strong><p>生成后的图片会显示在这里</p></div>
         </div>
         <div class="output-actions">
@@ -74,7 +91,7 @@
       </section>
     </div>
     <p id="status" class="status" role="status"></p>
-    <footer>帖子在本机分析。联网获取 Imgflip 目录并加载预览图。涂鸦模型需先完成本地训练。</footer>
+    <footer>梗图推荐与提示词模型在本机 CPU 运行。中文由本地 Qwen 翻译。场景配图调用外部 GPT Image API；涂鸦使用自训 VAE/CNN。</footer>
   </main>
 </body>
 </html>

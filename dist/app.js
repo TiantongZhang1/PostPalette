@@ -10,8 +10,10 @@ const download = byId("download");
 const sentiment = byId("sentiment");
 const useSentiment = byId("use-sentiment");
 const connection = byId("connection");
+const generator = byId("generator");
+const scenePrompt = byId("scene-prompt");
 const modes = [...document.querySelectorAll('input[name="format"]')];
-const controls = [post, caption, category, seed, color, useSentiment, ...modes, byId("sample"), byId("analyze"), byId("generate")];
+const controls = [post, caption, category, seed, color, generator, scenePrompt, useSentiment, ...modes, byId("sample"), byId("analyze"), byId("generate"), byId("build-prompt")];
 const sentimentLabels = {
   joy: "喜悦", sadness: "悲伤", anger: "愤怒", fear: "恐惧",
   surprise: "惊讶", affection: "关爱", neutral: "中性", other: "其他",
@@ -37,6 +39,10 @@ function resetForPost() {
   byId("memes").replaceChildren();
   sentiment.textContent = "推荐结果来自 Imgflip，可以打开来源或复制图片链接。";
   caption.value = "";
+  scenePrompt.value = "";
+  byId("prompt-info").textContent = "先填写左侧帖子，再生成并检查提示词。";
+  byId("prompt-details").hidden = true;
+  byId("prompt-draft").textContent = "";
   clearImage();
   say("");
 }
@@ -114,13 +120,16 @@ async function checkConnection() {
     if (location.protocol === "file:") throw new Error();
     const response = await fetch("/api/health");
     if (!response.ok) throw new Error();
-    const { missing, checkpoints } = await response.json();
+    const { missing, checkpoints, image_api: imageApi } = await response.json();
+    byId("api-status").textContent = imageApi.configured
+      ? "图像 API 已配置 · " + imageApi.model + " · " + imageApi.quality
+      : "图像 API 尚未配置：请在项目 .env 中填写 OPENAI_API_KEY 后重启服务。";
     const untrained = Object.entries(checkpoints).filter(([, ready]) => !ready).map(([name]) => name);
-    connection.textContent = missing.length ? "缺少模型依赖" : untrained.length ? "等待模型训练" : "本地服务已连接";
+    connection.textContent = missing.length ? "缺少模型依赖" : untrained.length ? "部分模型待训练" : "本地服务已连接";
     connection.dataset.state = missing.length || untrained.length ? "error" : "";
     connection.title = missing.length ? missing.join(", ") : "待训练模型 " + untrained.join(", ");
     if (!missing.length && untrained.length) {
-      say("模型训练尚未完成。可取消情绪辅助后使用梗图推荐，涂鸦生成需等待训练。");
+      say("尚无权重的模型：" + untrained.join("、") + "。其他已训练功能仍可使用。");
     }
   } catch {
     connection.textContent = "请启动本地服务";
@@ -130,7 +139,7 @@ async function checkConnection() {
 
 post.addEventListener("input", resetForPost);
 byId("sample").addEventListener("click", () => {
-  post.value = "熬了三个晚上，终于交了毕业论文！今天要好好庆祝一下。";
+    post.value = "今天和三个朋友去公园烧烤了，大家围着烤架聊天，差点把肉烤糊。";
   resetForPost();
   post.focus();
 });
@@ -163,7 +172,55 @@ for (const control of [category, seed, color, ...modes]) {
   });
 }
 
+generator.addEventListener("change", () => {
+  byId("scene-options").hidden = generator.value !== "scene";
+  byId("doodle-options").hidden = generator.value === "scene";
+  byId("seed-options").hidden = generator.value === "scene";
+  byId("preview").classList.toggle("sticker", generator.value !== "scene" && mode() === "sticker");
+  clearImage();
+  say("");
+});
+scenePrompt.addEventListener("input", clearImage);
+
+byId("build-prompt").addEventListener("click", () => {
+  if (!post.value.trim()) {
+    say("先输入一段帖子。", true);
+    post.focus();
+    return;
+  }
+  run("正在用自训模型生成提示词；中文帖子会先在本机翻译，首次加载可能较慢…", async () => {
+    const response = await request("/api/prompt", { post: post.value });
+    const result = await response.json();
+    scenePrompt.value = result.prompt;
+    byId("prompt-draft").textContent = result.draft || "模型未生成有效草稿，请编辑提示词。";
+    byId("prompt-details").hidden = false;
+    byId("prompt-info").textContent = "自训模型第 " + result.step + " 步"
+      + (result.translated ? " · 已通过本地 Qwen 翻译" : "") + "。" + result.warning;
+    clearImage();
+    say("提示词已生成。检查描述后点击「生成图片」。");
+  });
+});
+
 byId("generate").addEventListener("click", () => {
+  if (generator.value === "scene") {
+    const description = scenePrompt.value.trim();
+    if (!description) {
+      say("请先点击「根据帖子生成提示词」，或输入自己的画面描述。", true);
+      scenePrompt.focus();
+      return;
+    }
+    clearImage();
+    run("正在调用 GPT 图像 API，通常需要一些时间，请勿重复提交…", async () => {
+      const response = await request("/api/gpt-image", { prompt: description });
+      imageUrl = URL.createObjectURL(await response.blob());
+      art.src = imageUrl;
+      art.hidden = false;
+      byId("placeholder").hidden = true;
+      download.disabled = false;
+      say("场景配图已生成 · " + response.headers.get("X-Image-Model") + " · 1024×1024。");
+    });
+    return;
+  }
   if (!seed.reportValidity()) return;
   const sticker = mode() === "sticker";
   clearImage();
@@ -200,7 +257,8 @@ byId("copy-caption").addEventListener("click", async () => {
 download.addEventListener("click", () => {
   if (!imageUrl) return;
   const link = document.createElement("a");
-  link.download = mode() === "sticker" ? "postpalette-sticker.png" : "postpalette-cover.png";
+  link.download = generator.value === "scene" ? "postpalette-scene.png"
+    : mode() === "sticker" ? "postpalette-sticker.png" : "postpalette-cover.png";
   link.href = imageUrl;
   link.click();
 });

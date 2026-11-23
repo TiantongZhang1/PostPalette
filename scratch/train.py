@@ -5,6 +5,7 @@ from collections import Counter
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
+import os
 import random
 import time
 
@@ -26,7 +27,10 @@ def save_json(path, value):
 
 def save_checkpoint(path, value):
     temp = path.with_suffix(".pt.tmp")
-    torch.save(value, temp)
+    with temp.open("wb") as output:
+        torch.save(value, output)
+        output.flush()
+        os.fsync(output.fileno())
     temp.replace(path)
 
 
