@@ -154,7 +154,7 @@ byId("analyze").addEventListener("click", () => {
     const result = await response.json();
     showMemes(result.memes);
     caption.value = result.caption;
-    category.value = result.category;
+    if (result.category) category.value = result.category;
     clearImage();
     sentiment.textContent = result.sentiment
       ? "情绪模型判断为" + (sentimentLabels[result.sentiment.label] || result.sentiment.label)
