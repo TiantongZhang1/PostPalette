@@ -92,7 +92,12 @@ Windows：         .\.venv\Scripts\python.exe server.py
 ----------------------------------------------------------------------
 macOS / Linux：   .venv/bin/python -m unittest discover -s tests -v
 Windows：         .\.venv\Scripts\python.exe -m unittest discover -s tests -v
-测试全部离线运行，自训模型、Qwen 和 OpenAI 调用都用模拟对象代替，不需要权重和 API key。
+测试全部离线运行，自训模型、Qwen、Imgflip 和 OpenAI 调用都用模拟对象代替，不需要权重和 API key。
+   tests/test_models.py          suggest / generate_prompt / generate_image 的正常、缺权重降级、非法类别等路径
+   tests/test_routes.py          /api/image、/api/suggest、/api/prompt 的 HTTP 行为和输入校验
+   tests/test_image_pipeline.py  GPT Image 接入、日志不含密钥、路由与 Origin 校验
+GitHub Actions（.github/workflows/tests.yml）在每次 push 和 pull request 时运行同一套测试，
+安装 CPU 版 PyTorch，不下载权重，也不调用任何外部 API。
 通过测试不代表真实生图已经验证，见第四节。
 
 
