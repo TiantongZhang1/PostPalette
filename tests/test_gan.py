@@ -5,6 +5,7 @@ import unittest
 import torch
 
 from scratch.networks import ConditionalGAN, create_network
+from scratch.train import recognizability, resolve_device
 
 
 class ConditionalGANTests(unittest.TestCase):
@@ -41,6 +42,27 @@ class ConditionalGANTests(unittest.TestCase):
 
     def test_factory_builds_gan(self):
         self.assertIsInstance(create_network("gan", {}), ConditionalGAN)
+
+
+class TrainingSupportTests(unittest.TestCase):
+    def test_existing_tasks_keep_their_cuda_default(self):
+        for task in ("emotion", "cnn", "vae"):
+            self.assertEqual(resolve_device(task, None), "cuda")
+
+    def test_gan_defaults_to_cpu(self):
+        self.assertEqual(resolve_device("gan", None), "cpu")
+
+    def test_explicit_device_always_wins(self):
+        self.assertEqual(resolve_device("gan", "cuda"), "cuda")
+        self.assertEqual(resolve_device("vae", "cpu"), "cpu")
+
+    def test_recognizability_counts_matching_predictions(self):
+        class FixedCNN(torch.nn.Module):
+            def forward(self, images):
+                return torch.tensor([[9.0, 0, 0, 0, 0, 0], [0, 0, 9.0, 0, 0, 0]])
+
+        score = recognizability(torch.zeros(2, 1, 28, 28), torch.tensor([0, 5]), FixedCNN())
+        self.assertAlmostEqual(score, 0.5)
 
 
 if __name__ == "__main__":
