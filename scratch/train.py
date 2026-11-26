@@ -132,6 +132,13 @@ def resolve_device(task, requested):
     return "cpu" if task == "gan" else "cuda"
 
 
+def resolve_lr(task, requested):
+    """Adversarial training wants the DCGAN rate; the original three keep theirs."""
+    if requested is not None:
+        return requested
+    return 2e-4 if task == "gan" else 0.001
+
+
 @torch.inference_mode()
 def recognizability(images, labels, cnn):
     """Share of drawings the trained classifier assigns to their requested category."""
@@ -167,9 +174,15 @@ def save_samples(model, directory, device, task="vae"):
     grid.resize((28 * 8 * 3, 28 * len(CATEGORIES) * 3)).save(directory / "samples.png")
 
 
-def gan_optimizers(model, lr):
+def gan_parameter_groups(model):
+    """The two halves each optimizer steps. Gradient clipping must cover exactly these."""
     generator = list(model.condition.parameters()) + list(model.project.parameters()) + list(model.generator.parameters())
     discriminator = list(model.discriminator.parameters()) + list(model.real.parameters()) + list(model.auxiliary.parameters())
+    return generator, discriminator
+
+
+def gan_optimizers(model, lr):
+    generator, discriminator = gan_parameter_groups(model)
     return (torch.optim.AdamW(generator, lr=lr, betas=(0.5, 0.999), weight_decay=0.0001),
             torch.optim.AdamW(discriminator, lr=lr, betas=(0.5, 0.999), weight_decay=0.0001))
 
@@ -194,6 +207,7 @@ def train_gan(args, datasets, data_hash, device, directory, checkpoint, epochs, 
     if checkpoint:
         model.load_state_dict(checkpoint["model"])
     cnn = doodle_classifier(device)
+    groups = gan_parameter_groups(model)
     optimizers = gan_optimizers(model, args.lr)
     history, updates, start_epoch, best_score = [], 0, 1, float("-inf")
     if checkpoint:
@@ -225,7 +239,7 @@ def train_gan(args, datasets, data_hash, device, directory, checkpoint, epochs, 
                 + F.cross_entropy(real_classes, labels) + F.cross_entropy(fake_classes, labels)
             )
             discriminator_loss.backward()
-            nn.utils.clip_grad_norm_(model.discriminator.parameters(), 1.0)
+            nn.utils.clip_grad_norm_(groups[1], 1.0)
             optimizers[1].step()
 
             # Generator: make the discriminator call the drawing real and read the right category.
@@ -236,7 +250,7 @@ def train_gan(args, datasets, data_hash, device, directory, checkpoint, epochs, 
             if not torch.isfinite(generator_loss) or not torch.isfinite(discriminator_loss):
                 raise RuntimeError("Non-finite loss; no checkpoint was saved for this epoch")
             generator_loss.backward()
-            nn.utils.clip_grad_norm_(model.generator.parameters(), 1.0)
+            nn.utils.clip_grad_norm_(groups[0], 1.0)
             optimizers[0].step()
 
             total += float(generator_loss.detach()) * len(images)
@@ -269,7 +283,8 @@ def main():
     parser.add_argument("task", choices=("emotion", "cnn", "vae", "gan"))
     parser.add_argument("--epochs", type=int)
     parser.add_argument("--batch-size", type=int, default=128)
-    parser.add_argument("--lr", type=float, default=0.001)
+    parser.add_argument("--lr", type=float, default=None,
+                        help="Defaults to 0.001, except gan which defaults to 2e-4")
     parser.add_argument("--device", choices=("cpu", "cuda"), default=None,
                         help="Defaults to cuda, except gan which defaults to cpu")
     parser.add_argument("--seed", type=int, default=2026)
@@ -277,6 +292,8 @@ def main():
     parser.add_argument("--evaluate", action="store_true", help="Evaluate the best checkpoint on the test split without training")
     args = parser.parse_args()
     epochs = args.epochs if args.epochs is not None else {"emotion": 15, "cnn": 12, "vae": 40, "gan": 40}[args.task]
+    # Record the resolved rate, so the checkpoint says what the run actually used.
+    args.lr = resolve_lr(args.task, args.lr)
     if epochs < 1 or args.batch_size < 1 or args.lr <= 0:
         parser.error("epochs, batch size, and learning rate must be positive")
     if args.resume and args.evaluate:

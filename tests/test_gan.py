@@ -12,7 +12,7 @@ from unittest.mock import patch
 import torch
 
 from scratch.networks import ConditionalGAN, create_network
-from scratch.train import recognizability, resolve_device
+from scratch.train import gan_parameter_groups, recognizability, resolve_device, resolve_lr
 from server import WorkspaceHandler
 
 PNG = b"\x89PNG\r\n\x1a\nfixture"
@@ -55,7 +55,55 @@ class ConditionalGANTests(unittest.TestCase):
         self.assertIsInstance(create_network("gan", {}), ConditionalGAN)
 
 
+class InkConventionTests(unittest.TestCase):
+    """1 means ink. A shape-and-range check passes on an inverted image; these do not."""
+
+    def saturated(self, bias):
+        model = ConditionalGAN().eval()
+        with torch.no_grad():
+            model.generator[-2].weight.zero_()
+            model.generator[-2].bias.fill_(bias)
+        with torch.inference_mode():
+            return model.generate(torch.randn(2, model.latent), torch.tensor([0, 1]))
+
+    def test_positive_generator_output_is_full_ink(self):
+        self.assertGreater(float(self.saturated(10.0).min()), 0.99)
+
+    def test_negative_generator_output_is_blank_paper(self):
+        self.assertLess(float(self.saturated(-10.0).max()), 0.01)
+
+    def test_discriminator_reads_full_ink_as_the_generator_range(self):
+        model = ConditionalGAN().eval()
+        captured = []
+        model.discriminator.register_forward_pre_hook(lambda module, args: captured.append(args[0]))
+        with torch.inference_mode():
+            model.discriminate(torch.ones(1, 1, 28, 28))
+        self.assertAlmostEqual(float(captured[0].min()), 1.0, places=5)
+
+
 class TrainingSupportTests(unittest.TestCase):
+    def test_gan_uses_the_dcgan_learning_rate_by_default(self):
+        self.assertAlmostEqual(resolve_lr("gan", None), 2e-4)
+
+    def test_existing_tasks_keep_their_original_learning_rate(self):
+        for task in ("emotion", "cnn", "vae"):
+            self.assertAlmostEqual(resolve_lr(task, None), 0.001)
+
+    def test_explicit_learning_rate_always_wins(self):
+        self.assertAlmostEqual(resolve_lr("gan", 0.01), 0.01)
+
+    def test_each_optimizer_clips_every_parameter_it_steps(self):
+        model = ConditionalGAN()
+        generator, discriminator = gan_parameter_groups(model)
+        generator_ids = {id(p) for p in generator}
+        discriminator_ids = {id(p) for p in discriminator}
+        self.assertEqual(generator_ids & discriminator_ids, set())
+        self.assertEqual(generator_ids | discriminator_ids, {id(p) for p in model.parameters()})
+        # The projection and the class embedding are stepped too, so clipping
+        # only model.generator would leave most of the generator side unclipped.
+        self.assertGreater(len(generator_ids), len({id(p) for p in model.generator.parameters()}))
+
+
     def test_existing_tasks_keep_their_cuda_default(self):
         for task in ("emotion", "cnn", "vae"):
             self.assertEqual(resolve_device(task, None), "cuda")

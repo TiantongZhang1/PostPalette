@@ -1,4 +1,4 @@
-"""Use the allowed pretrained LLM and three locally trained course models."""
+"""Use the allowed pretrained LLM together with the locally trained course models."""
 
 from functools import cache
 from io import BytesIO
