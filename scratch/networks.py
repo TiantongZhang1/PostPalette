@@ -1,4 +1,4 @@
-"""All weights in these three networks start with random initialization."""
+"""All weights in these networks start with random initialization."""
 
 import torch
 from torch import nn
@@ -74,6 +74,39 @@ class ConditionalVAE(nn.Module):
         return self.decode(latent, labels), mean, log_variance
 
 
+class ConditionalGAN(nn.Module):
+    """Auxiliary-classifier GAN. generate() returns [0, 1] ink values like the VAE decoder."""
+
+    def __init__(self, classes=6, latent=64, width=64):
+        super().__init__()
+        self.classes = classes
+        self.latent = latent
+        self.condition = nn.Embedding(classes, latent)
+        self.project = nn.Sequential(
+            nn.Linear(latent, width * 2 * 7 * 7), nn.BatchNorm1d(width * 2 * 7 * 7), nn.ReLU(),
+        )
+        self.generator = nn.Sequential(
+            nn.ConvTranspose2d(width * 2, width, 4, stride=2, padding=1), nn.BatchNorm2d(width), nn.ReLU(),
+            nn.ConvTranspose2d(width, 1, 4, stride=2, padding=1), nn.Tanh(),
+        )
+        self.discriminator = nn.Sequential(
+            nn.Conv2d(1, width, 4, stride=2, padding=1), nn.LeakyReLU(0.2),
+            nn.Conv2d(width, width * 2, 4, stride=2, padding=1), nn.LeakyReLU(0.2), nn.Flatten(),
+        )
+        self.real = nn.Linear(width * 2 * 7 * 7, 1)
+        self.auxiliary = nn.Linear(width * 2 * 7 * 7, classes)
+        self.width = width
+
+    def generate(self, noise, labels):
+        hidden = self.project(noise * self.condition(labels))
+        drawings = self.generator(hidden.reshape(-1, self.width * 2, 7, 7))
+        return (drawings + 1) / 2
+
+    def discriminate(self, images):
+        hidden = self.discriminator(images * 2 - 1)
+        return self.real(hidden).squeeze(1), self.auxiliary(hidden)
+
+
 def vae_loss(logits, images, mean, log_variance, beta):
     reconstruction = F.binary_cross_entropy_with_logits(logits, images, reduction="none").flatten(1).sum(1).mean()
     divergence = -0.5 * (1 + log_variance - mean.square() - log_variance.exp()).sum(1).mean()
@@ -81,4 +114,5 @@ def vae_loss(logits, images, mean, log_variance, beta):
 
 
 def create_network(task, config):
-    return {"emotion": EmotionEncoder, "cnn": DoodleCNN, "vae": ConditionalVAE}[task](**config)
+    return {"emotion": EmotionEncoder, "cnn": DoodleCNN, "vae": ConditionalVAE,
+            "gan": ConditionalGAN}[task](**config)
