@@ -3,13 +3,14 @@
 from http.client import HTTPConnection
 from http.server import ThreadingHTTPServer
 import json
+import pathlib
+import tempfile
 import threading
 import unittest
 from unittest.mock import patch
 
 import torch
 
-from scratch.config import ARTIFACTS
 from scratch.networks import ConditionalGAN, create_network
 from scratch.train import recognizability, resolve_device
 from server import WorkspaceHandler
@@ -119,11 +120,16 @@ class ApplicationIntegrationTests(unittest.TestCase):
         self.assertEqual(generate.call_args.kwargs["generator"], "vae")
 
     def test_missing_checkpoint_reports_a_model_error(self):
-        from models import ModelError, generate_image
-        if (ARTIFACTS / "gan" / "best.pt").exists():
-            self.skipTest("gan is already trained")
-        with self.assertRaisesRegex(ModelError, "gan"):
-            generate_image("cat", "#25203c", False, 2026, generator="gan")
+        import models
+        with tempfile.TemporaryDirectory() as empty:
+            with patch.object(models, "ARTIFACTS", pathlib.Path(empty)):
+                with self.assertRaisesRegex(models.ModelError, "gan"):
+                    models.generate_image("cat", "#25203c", False, 2026, generator="gan")
+
+    def test_unknown_generator_never_reaches_a_checkpoint(self):
+        import models
+        with self.assertRaisesRegex(models.ModelError, "生成模型"):
+            models.generate_image("cat", "#25203c", False, 2026, generator="stable-diffusion")
 
 
 if __name__ == "__main__":

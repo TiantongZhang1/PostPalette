@@ -11,14 +11,17 @@ const sentiment = byId("sentiment");
 const useSentiment = byId("use-sentiment");
 const connection = byId("connection");
 const generator = byId("generator");
+const doodleModel = byId("doodle-model");
 const scenePrompt = byId("scene-prompt");
 const modes = [...document.querySelectorAll('input[name="format"]')];
-const controls = [post, caption, category, seed, color, generator, scenePrompt, useSentiment, ...modes, byId("sample"), byId("analyze"), byId("generate"), byId("build-prompt")];
+const controls = [post, caption, category, seed, color, generator, doodleModel, scenePrompt, useSentiment, ...modes, byId("sample"), byId("analyze"), byId("generate"), byId("build-prompt"), byId("rewrite-style"), byId("rewrite-post"), byId("find-references"), byId("restore-post")];
+const doodleModelNames = { vae: "条件 VAE", gan: "条件 GAN" };
 const sentimentLabels = {
   joy: "喜悦", sadness: "悲伤", anger: "愤怒", fear: "恐惧",
   surprise: "惊讶", affection: "关爱", neutral: "中性", other: "其他",
 };
 let imageUrl = null;
+let previousPost = null;
 
 function say(message, error = false) {
   status.textContent = message;
@@ -43,6 +46,9 @@ function resetForPost() {
   byId("prompt-info").textContent = "先填写左侧帖子，再生成并检查提示词。";
   byId("prompt-details").hidden = true;
   byId("prompt-draft").textContent = "";
+  byId("rewrite-results").replaceChildren();
+  byId("reference-results").replaceChildren();
+  byId("reference-info").textContent = "参考库为 24 条 AI 编写的项目示例，非真实用户帖子或实时网络搜索；按词面相似度检索。";
   clearImage();
   say("");
 }
@@ -79,6 +85,98 @@ async function run(message, action) {
     controls.forEach((control) => { control.disabled = false; });
   }
 }
+
+function requirePost() {
+  if (post.value.trim()) return true;
+  say("先输入一段帖子，或点击「试用示例」。", true);
+  post.focus();
+  return false;
+}
+
+function textAction(label, action) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "link";
+  button.textContent = label;
+  button.addEventListener("click", action);
+  return button;
+}
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    say("已复制文字。");
+  } catch {
+    say("浏览器未允许复制，请选中文字后手动复制。", true);
+  }
+}
+
+byId("rewrite-post").addEventListener("click", () => {
+  if (!requirePost()) return;
+  run("正在本机生成三个改写版本，CPU 首次加载可能需要一些时间…", async () => {
+    const response = await request("/api/rewrite", { post: post.value, style: byId("rewrite-style").value });
+    const result = await response.json();
+    byId("rewrite-results").replaceChildren();
+    result.versions.forEach((version, index) => {
+      const card = document.createElement("article");
+      card.className = "text-result";
+      const heading = document.createElement("h4");
+      heading.textContent = "版本 " + (index + 1);
+      const editor = document.createElement("textarea");
+      editor.maxLength = 1000;
+      editor.value = version;
+      editor.setAttribute("aria-label", "编辑改写版本 " + (index + 1));
+      const actions = document.createElement("div");
+      actions.className = "text-actions";
+      actions.append(textAction("使用此版本", () => {
+        if (post.disabled) { say("请等待当前操作完成。", true); return; }
+        if (!editor.value.trim()) { say("改写内容不能为空。", true); return; }
+        previousPost = post.value;
+        post.value = editor.value;
+        byId("restore-post").hidden = false;
+        resetForPost();
+        post.focus();
+        say("已替换帖子。可以继续推荐梗图或生成配图提示词，也可以恢复替换前原文。");
+      }), textAction("复制", () => copyText(editor.value)));
+      card.append(heading, editor, actions);
+      byId("rewrite-results").append(card);
+    });
+    say(result.notice);
+  });
+});
+
+byId("restore-post").addEventListener("click", () => {
+  if (previousPost === null) return;
+  post.value = previousPost;
+  previousPost = null;
+  byId("restore-post").hidden = true;
+  resetForPost();
+  say("已恢复替换前原文。");
+});
+
+byId("find-references").addEventListener("click", () => {
+  if (!requirePost()) return;
+  run("正在检索本地参考示例…", async () => {
+    const response = await request("/api/references", { post: post.value });
+    const result = await response.json();
+    byId("reference-results").replaceChildren();
+    byId("reference-info").textContent = result.corpus_description + " 当前共 " + result.corpus_count + " 条；分数是词面匹配分数，不是正确概率。";
+    for (const match of result.matches) {
+      const card = document.createElement("article");
+      card.className = "text-result";
+      const heading = document.createElement("h4");
+      heading.textContent = match.topic + " · 匹配分数 " + match.score.toFixed(3);
+      const text = document.createElement("p");
+      text.textContent = match.text;
+      const source = document.createElement("p");
+      source.className = "hint";
+      source.textContent = match.source + "；匹配词：" + match.matched_terms.join("、");
+      card.append(heading, text, source, textAction("复制参考文字", () => copyText(match.text)));
+      byId("reference-results").append(card);
+    }
+    say(result.matches.length ? "已找到 " + result.matches.length + " 条本地参考，仅供表达参考。" : "本地示例库中没有足够相关的内容，可以换关键词；当前不进行网络搜索。");
+  });
+});
 
 function showMemes(memes) {
   byId("memes").replaceChildren(...memes.map((meme) => {
@@ -164,7 +262,7 @@ byId("analyze").addEventListener("click", () => {
   });
 });
 
-for (const control of [category, seed, color, ...modes]) {
+for (const control of [category, seed, color, doodleModel, ...modes]) {
   control.addEventListener(control === seed ? "input" : "change", () => {
     byId("preview").classList.toggle("sticker", mode() === "sticker");
     clearImage();
@@ -227,6 +325,7 @@ byId("generate").addEventListener("click", () => {
   run("正在生成涂鸦，并按类别识别分数选择候选…", async () => {
     const response = await request("/api/image", {
       category: category.value, color: color.value, mode: mode(), seed: seed.value === "" ? null : seed.valueAsNumber,
+      generator: doodleModel.value,
     });
     imageUrl = URL.createObjectURL(await response.blob());
     art.src = imageUrl;
@@ -234,8 +333,8 @@ byId("generate").addEventListener("click", () => {
     byId("placeholder").hidden = true;
     download.disabled = false;
     const score = Math.round(Number(response.headers.get("X-Category-Score")) * 100);
-    say((sticker ? "透明贴纸已生成。" : "配图已生成。") + " 种子 " + response.headers.get("X-Image-Seed")
-      + "，类别识别分数 " + score + "%。");
+    say((sticker ? "透明贴纸已生成。" : "配图已生成。") + " " + (doodleModelNames[doodleModel.value] || doodleModel.value)
+      + "，种子 " + response.headers.get("X-Image-Seed") + "，类别识别分数 " + score + "%。");
   });
 });
 

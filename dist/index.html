@@ -24,6 +24,24 @@
         <textarea id="post" rows="5" maxlength="1000" placeholder="输入或粘贴一段帖子…"></textarea>
         <div class="input-footer"><button id="sample" class="link" type="button">试用示例 ↗</button><span id="count">0 / 1000</span></div>
         <button class="primary" id="analyze" type="button">✦ 推荐梗图</button>
+        <section class="writing-tools" aria-labelledby="writing-title">
+          <h3 id="writing-title">完善帖子</h3>
+          <label class="field-label" for="rewrite-style">改写风格</label>
+          <select id="rewrite-style">
+            <option value="expand">扩写：表达更完整</option>
+            <option value="humor">幽默：轻松一点</option>
+            <option value="concise">简洁：精炼表达</option>
+          </select>
+          <div class="output-actions">
+            <button class="secondary" id="rewrite-post" type="button">生成 3 个版本</button>
+            <button class="secondary" id="find-references" type="button">找相似参考</button>
+          </div>
+          <p class="hint">改写由本地 Qwen 完成，首次加载较慢。请核对事实后使用；替换帖子后可恢复替换前原文。</p>
+          <button id="restore-post" class="link" type="button" hidden>恢复替换前原文</button>
+          <div id="rewrite-results" aria-live="polite"></div>
+          <p class="hint" id="reference-info">参考库为 24 条 AI 编写的项目示例，非真实用户帖子或实时网络搜索；按词面相似度检索。</p>
+          <div id="reference-results" aria-live="polite"></div>
+        </section>
         <div class="recommendations">
           <h3>推荐结果</h3>
           <div id="memes" class="memes"></div>
@@ -51,6 +69,12 @@
         <label for="caption" class="field-label">配文</label>
         <textarea id="caption" rows="2" maxlength="160" placeholder="推荐梗图时会一起拟好，配文可编辑和复制。"></textarea>
         <button id="copy-caption" class="link" type="button">复制配文</button>
+        <label for="doodle-model" class="field-label category-label">生成模型</label>
+        <select id="doodle-model">
+          <option value="vae">条件 VAE（自训）</option>
+          <option value="gan">条件 GAN（自训）</option>
+        </select>
+        <p class="hint">两种画法都在本机 CPU 运行，都从零训练，共用同一套挑选与排版流程。</p>
         <label for="category" class="field-label category-label">涂鸦类别</label>
         <select id="category">
           <option value="smiley face">笑脸</option>
