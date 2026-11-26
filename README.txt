@@ -26,17 +26,43 @@ Windows（PowerShell）：
 首次推荐梗图或翻译中文时，会从 Hugging Face 下载 Qwen/Qwen2.5-1.5B-Instruct（约 3 GB），
 缓存在 .model-cache/。
 
-2. 放入自训模型权重
+2. 下载本组已训练模型（无需重新训练）
 ----------------------------------------------------------------------
-自训权重不提交 Git，也没有下载脚本，需要向组内负责训练的同学索取，按下面的路径放好：
+GitHub 源码不包含 artifacts/，这是刻意排除的大文件，不是训练成果缺失。
+四个自训模型的权重和训练记录通过 GitHub Release 单独提供：
+   发布页：https://github.com/TiantongZhang1/PostPalette/releases/tag/models-v1
+   模型包：https://github.com/TiantongZhang1/PostPalette/releases/download/models-v1/postpalette-models-v1.zip
+   校验值：https://github.com/TiantongZhang1/PostPalette/releases/download/models-v1/postpalette-models-v1.zip.sha256
+v1 ZIP SHA-256：a5f5543d4a2c0ddda8f477a4e6f75518883a75ba4f585df2907bc89720295b3a
 
+把 ZIP 下载到包含 server.py 的项目根目录。已经有自己训练的同名权重时先备份，下面的命令会覆盖。
+只解压 artifacts/ 这一部分，包内的 MODEL_INSTALL.txt 和 MODEL_MANIFEST.json 不会落到项目根目录：
+
+macOS / Linux：
+   shasum -a 256 postpalette-models-v1.zip      # 输出应与上面的 SHA-256 一致
+   unzip -o postpalette-models-v1.zip 'artifacts/*' -d .
+（.sha256 文件是 Windows 换行格式，macOS 上 shasum -c 会报找不到文件，请直接对比输出的哈希值。）
+
+Windows（PowerShell）：
+   (Get-FileHash .\postpalette-models-v1.zip -Algorithm SHA256).Hash   # 应与上面的 SHA-256 一致（大小写不敏感）
+   Expand-Archive -LiteralPath .\postpalette-models-v1.zip -DestinationPath .\models-v1-tmp -Force
+   Copy-Item -Path .\models-v1-tmp\artifacts -Destination . -Recurse -Force
+   Remove-Item -Recurse -Force .\models-v1-tmp
+
+解压后应得到以下路径，不要再套一层 artifacts/：
    artifacts/emotion/best.pt   情绪识别 Transformer Encoder   由 python -m scratch.train emotion 产出
    artifacts/cnn/best.pt       涂鸦筛选 CNN                   由 python -m scratch.train cnn 产出
    artifacts/vae/best.pt       涂鸦生成条件 VAE               由 python -m scratch.train vae 产出
    artifacts/prompt/best.pt    提示词草稿 GRU 编码器-解码器    由 python -m scratch.prompt_train 产出
+每个模型目录里还有 history.json、test_metrics.json，vae/ 下另有采样图 samples.png。
+ZIP 本身、.sha256、MODEL_INSTALL.txt 和 MODEL_MANIFEST.json 已加入 .gitignore，误放在根目录也不会被提交。
 
-加载时会校验权重里记录的任务名、随机初始化标记、训练步数、标签顺序和词表，
-只接受本项目训练脚本产出的文件。放入或更换权重后需要重启服务。
+这四份检查点已在提交 bf48e58 的模型结构上通过 CPU 严格加载检查。
+加载时还会校验权重里记录的任务名、随机初始化标记、训练步数、标签顺序和词表，
+只接受本项目训练脚本产出的文件。放入或更换权重后需要重启服务，以清除进程内的模型缓存。
+模型包不含 Qwen 权重（首次使用时自动下载）、GPT 生图 API 密钥、原始数据、
+暂停的 scene 模型或其他实验分支的 GAN 权重。
+模型指标和质量限制见第五节和包内说明；尤其不能把 CNN 分类准确率当作贴纸生成质量。
 
 各功能需要的条件：
    推荐梗图                   只需 Qwen；有 emotion 权重时额外参考情绪，缺少时自动降级为只用 Qwen
@@ -295,7 +321,7 @@ scratch/experiments/，见第六节）。已有这三个 JSON 时可直接训练
 本机初始结果（2026-11-22，CPU）
 1146241 个参数，1200 步；训练描述 100007 条，独立测试描述 2501 条。
 第 1200 步验证 NLL 0.907317；测试 NLL 0.846904，perplexity 2.332414。
-测试结果见 artifacts/prompt/test_metrics.json，权重不提交 Git，需要另行共享。
+测试结果见 artifacts/prompt/test_metrics.json。权重不提交 Git，通过 models-v1 发布包提供（见第一节第 2 小节）。
 英文烧烤场景描述能基本复制保留；口语例句 Today I went to the beach ...
 曾输出 the to the beach with friends friends friends.，说明口语改写能力仍然不足。
 这版可作为可运行的实验基线，不能声称比直接使用原帖更好。页面保留原帖与草稿供核对。
@@ -322,7 +348,7 @@ https://creativecommons.org/licenses/by/4.0/
 分享项目
 ----------------------------------------------------------------------
 分享源码时排除 .env、.venv、.model-cache、data、artifacts 和 __pycache__。
-团队复现需要运行数据准备与训练，或单独共享本组训练产物及其 manifest/history。
+团队复现直接下载 models-v1 发布包（见第一节第 2 小节），不需要重新准备数据或训练。
 旧版 .model-cache 中的其他预训练权重不会被当前代码使用。
 
 
