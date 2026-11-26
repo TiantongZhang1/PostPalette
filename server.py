@@ -15,7 +15,8 @@ ROOT = Path(__file__).resolve().parent
 CACHE = ROOT / ".model-cache"
 os.environ.setdefault("HF_HOME", str(CACHE / "huggingface"))
 
-from models import LLM, ModelError, generate_image, generate_prompt, suggest, training_status
+from models import DOODLE_GENERATORS, LLM, ModelError, generate_image, generate_prompt, rewrite_post, suggest, training_status
+from references import find_references
 from image_api import generate_api_image, image_status, load_environment
 from scratch.config import CATEGORIES
 
@@ -106,12 +107,23 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
         if not self.allowed_request():
             return
         path = urlsplit(self.path).path
-        if path not in ("/api/suggest", "/api/image", "/api/prompt", "/api/gpt-image"):
+        if path not in ("/api/suggest", "/api/image", "/api/prompt", "/api/gpt-image", "/api/rewrite", "/api/references"):
             self.send_json({"error": "路径不存在。"}, HTTPStatus.NOT_FOUND)
             return
 
         try:
             data = self.read_payload()
+            if path == "/api/references":
+                self.send_json(find_references(field(data, "post", 1000)))
+                return
+            if path == "/api/rewrite":
+                post = field(data, "post", 1000)
+                style = data.get("style", "expand")
+                if not isinstance(style, str) or style not in ("expand", "humor", "concise"):
+                    raise ValueError("请选择有效的改写风格。")
+                self.ensure_dependencies()
+                self.send_json(rewrite_post(post, style))
+                return
             if path == "/api/prompt":
                 post = field(data, "post", 1000)
                 self.ensure_dependencies()
@@ -136,14 +148,17 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             color = data.get("color")
             mode = data.get("mode")
             seed = data.get("seed")
+            generator = data.get("generator", "vae")
             if category not in CATEGORIES or color not in ("#5936b8", "#25203c", "#d94f88") or mode not in ("cover", "sticker"):
                 raise ValueError("请选择有效的涂鸦类别、颜色和图片类型。")
+            if generator not in DOODLE_GENERATORS:
+                raise ValueError("请选择有效的涂鸦生成模型。")
             if seed is None:
                 seed = randbelow(2**32)
             if type(seed) is not int or not 0 <= seed < 2**32:
                 raise ValueError("种子必须是 0 至 4294967295 之间的整数。")
             self.ensure_dependencies()
-            image, score = generate_image(category, color, mode == "sticker", seed)
+            image, score = generate_image(category, color, mode == "sticker", seed, generator=generator)
             self.send_bytes(image, "image/png", **{"X-Image-Seed": seed, "X-Category-Score": f"{score:.4f}"})
         except (BrokenPipeError, ConnectionResetError):
             return

@@ -1,11 +1,21 @@
 """CPU-only tests for the conditional GAN doodle generator."""
 
+from http.client import HTTPConnection
+from http.server import ThreadingHTTPServer
+import json
+import threading
 import unittest
+from unittest.mock import patch
 
 import torch
 
+from scratch.config import ARTIFACTS
 from scratch.networks import ConditionalGAN, create_network
 from scratch.train import recognizability, resolve_device
+from server import WorkspaceHandler
+
+PNG = b"\x89PNG\r\n\x1a\nfixture"
+DOODLE = {"category": "cat", "color": "#25203c", "mode": "cover", "seed": 1}
 
 
 class ConditionalGANTests(unittest.TestCase):
@@ -63,6 +73,57 @@ class TrainingSupportTests(unittest.TestCase):
 
         score = recognizability(torch.zeros(2, 1, 28, 28), torch.tensor([0, 5]), FixedCNN())
         self.assertAlmostEqual(score, 0.5)
+
+
+class ApplicationIntegrationTests(unittest.TestCase):
+    def setUp(self):
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), WorkspaceHandler)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join()
+
+    def post(self, path, body):
+        connection = HTTPConnection("127.0.0.1", self.server.server_port, timeout=5)
+        try:
+            connection.request("POST", path, json.dumps(body), {"Content-Type": "application/json"})
+            response = connection.getresponse()
+            response.read()
+            return response.status
+        finally:
+            connection.close()
+
+    def test_health_lists_the_gan_checkpoint(self):
+        from models import training_status
+        self.assertIn("gan", training_status())
+
+    def test_unknown_generator_is_rejected_before_the_model_layer(self):
+        with patch("server.generate_image") as generate:
+            status = self.post("/api/image", {**DOODLE, "generator": "stable-diffusion"})
+        self.assertEqual(status, 400)
+        generate.assert_not_called()
+
+    def test_known_generator_reaches_the_model_layer(self):
+        with patch("server.generate_image", return_value=(PNG, 0.9)) as generate:
+            status = self.post("/api/image", {**DOODLE, "generator": "gan"})
+        self.assertEqual(status, 200)
+        self.assertEqual(generate.call_args.kwargs["generator"], "gan")
+
+    def test_generator_defaults_to_the_vae(self):
+        with patch("server.generate_image", return_value=(PNG, 0.9)) as generate:
+            status = self.post("/api/image", DOODLE)
+        self.assertEqual(status, 200)
+        self.assertEqual(generate.call_args.kwargs["generator"], "vae")
+
+    def test_missing_checkpoint_reports_a_model_error(self):
+        from models import ModelError, generate_image
+        if (ARTIFACTS / "gan" / "best.pt").exists():
+            self.skipTest("gan is already trained")
+        with self.assertRaisesRegex(ModelError, "gan"):
+            generate_image("cat", "#25203c", False, 2026, generator="gan")
 
 
 if __name__ == "__main__":
