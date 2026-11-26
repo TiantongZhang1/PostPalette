@@ -6,10 +6,10 @@ import numpy as np
 from PIL import Image
 import torch
 
-from .config import ARTIFACTS, DATA
+from ..config import ARTIFACTS, DATA
 from .coco_train import PROMPTS, caption_array, encode_caption, diffusion_loss, dataset_hash
 from .photo_diffusion import PhotoUNet, configure_cuda, noise_schedule, sample
-from .train import save_json
+from ..train import save_json
 
 
 def main():
