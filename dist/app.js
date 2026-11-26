@@ -19,10 +19,44 @@ const sentimentLabels = {
   surprise: "惊讶", affection: "关爱", neutral: "中性", other: "其他",
 };
 let imageUrl = null;
+let health = null;
+// Controls that /api/health says cannot work; run() must not re-enable them.
+const blocked = new Set();
 
 function say(message, error = false) {
   status.textContent = message;
-  status.dataset.state = error ? "error" : "";
+  status.dataset.state = error === "warn" ? "warn" : error ? "error" : "";
+}
+
+function block(control, reasonId, reason) {
+  if (reason) blocked.add(control);
+  else blocked.delete(control);
+  control.disabled = Boolean(reason);
+  control.title = reason;
+  byId(reasonId).textContent = reason;
+}
+
+function missingWeights(tasks) {
+  const absent = tasks.filter((task) => !health.checkpoints[task]);
+  return absent.length
+    ? "缺少模型权重 " + absent.map((task) => "artifacts/" + task + "/best.pt").join("、") + "，放入后重启服务。"
+    : "";
+}
+
+function applyAvailability() {
+  if (!health) return;
+  const dependencies = health.missing.length
+    ? "缺少本地依赖 " + health.missing.join(", ") + "，请按 README 安装后重启服务。"
+    : "";
+  const emotion = dependencies || (health.checkpoints.emotion ? ""
+    : "缺少情绪模型权重 artifacts/emotion/best.pt，推荐将只用 Qwen。");
+  if (emotion) useSentiment.checked = false;
+  block(useSentiment, "emotion-reason", emotion);
+  block(byId("analyze"), "analyze-reason", dependencies);
+  block(byId("build-prompt"), "build-reason", dependencies || missingWeights(["prompt"]));
+  block(byId("generate"), "generate-reason", generator.value === "scene"
+    ? (health.image_api.configured ? "" : "未配置 OPENAI_API_KEY：在项目 .env 中填写后重启服务。")
+    : dependencies || missingWeights(["vae", "cnn"]));
 }
 
 function clearImage() {
@@ -76,7 +110,7 @@ async function run(message, action) {
   } catch (error) {
     say(error.message, true);
   } finally {
-    controls.forEach((control) => { control.disabled = false; });
+    controls.forEach((control) => { control.disabled = blocked.has(control); });
   }
 }
 
@@ -120,7 +154,9 @@ async function checkConnection() {
     if (location.protocol === "file:") throw new Error();
     const response = await fetch("/api/health");
     if (!response.ok) throw new Error();
-    const { missing, checkpoints, image_api: imageApi } = await response.json();
+    health = await response.json();
+    const { missing, checkpoints, image_api: imageApi } = health;
+    applyAvailability();
     byId("api-status").textContent = imageApi.configured
       ? "图像 API 已配置 · " + imageApi.model + " · " + imageApi.quality
       : "图像 API 尚未配置：请在项目 .env 中填写 OPENAI_API_KEY 后重启服务。";
@@ -159,8 +195,15 @@ byId("analyze").addEventListener("click", () => {
     sentiment.textContent = result.sentiment
       ? "情绪模型判断为" + (sentimentLabels[result.sentiment.label] || result.sentiment.label)
         + "（模型分数 " + Math.round(result.sentiment.score * 100) + "%）"
-      : "本次推荐未启用情绪参考。";
-    say("已推荐 3 张 Imgflip 梗图，并选择涂鸦类别与配文。");
+      : result.emotion_requested && !result.emotion_used
+        ? "本次未使用情绪模型（缺少权重），只用 Qwen 推荐。"
+        : "本次推荐未启用情绪参考。";
+    const notices = result.notices || [];
+    if (result.degraded && notices.length) {
+      say("已推荐 3 张 Imgflip 梗图（降级结果）：" + notices.join(" "), "warn");
+    } else {
+      say("已推荐 3 张 Imgflip 梗图，并选择涂鸦类别与配文。");
+    }
   });
 });
 
@@ -177,6 +220,7 @@ generator.addEventListener("change", () => {
   byId("doodle-options").hidden = generator.value === "scene";
   byId("seed-options").hidden = generator.value === "scene";
   byId("preview").classList.toggle("sticker", generator.value !== "scene" && mode() === "sticker");
+  applyAvailability();
   clearImage();
   say("");
 });
