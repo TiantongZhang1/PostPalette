@@ -168,6 +168,33 @@ UI 中“分析人物、动作与可见表情”只发送到本机 /api/photo-pe
 这一张成功计数的样例不代表总体两人照片效果。analysis.json 保留实际接口输出；manual_facts_writing.json 是人工核对线索的写作检查，不能当作自动视觉输出。
 
 
+历史模型发布说明（models-v1，仅供旧版本使用）
+下载本组已训练模型（组员无需重训）
+GitHub 源码不包含 artifacts/，这是刻意排除的大文件，不是训练成果缺失。
+四个自训模型的权重和训练记录通过 GitHub Release 单独提供：
+https://github.com/TiantongZhang1/PostPalette/releases/tag/models-v1
+直接下载：
+https://github.com/TiantongZhang1/PostPalette/releases/download/models-v1/postpalette-models-v1.zip
+校验文件：
+https://github.com/TiantongZhang1/PostPalette/releases/download/models-v1/postpalette-models-v1.zip.sha256
+
+将 ZIP 放到包含 server.py 的项目根目录，在 PowerShell 执行：
+   Expand-Archive -LiteralPath .\postpalette-models-v1.zip -DestinationPath . -Force
+如果已经有自己训练的同名文件，先备份，避免覆盖。
+解压后应得到以下路径，不要再套一层 artifacts/：
+   artifacts/emotion/best.pt
+   artifacts/cnn/best.pt
+   artifacts/vae/best.pt
+   artifacts/prompt/best.pt
+包内还有 history.json、test_metrics.json、MODEL_INSTALL.txt、MODEL_MANIFEST.json 与 VAE 采样图。
+可执行 Get-FileHash .\postpalette-models-v1.zip -Algorithm SHA256，与同页 .sha256 内容核对。
+v1 ZIP SHA-256：a5f5543d4a2c0ddda8f477a4e6f75518883a75ba4f585df2907bc89720295b3a
+四份原检查点已在 main 提交 bf48e58 的模型结构上通过 CPU 严格加载检查。
+按下方说明安装依赖并运行 server.py；已经运行的服务须重启，以清除旧模型缓存。
+Qwen 权重需另行下载或配置缓存；GPT 生图 API 密钥需各自配置，均不在本包中。
+本包不包含原始数据、暂停的 scene 模型或其他实验分支的 GAN 权重。
+模型指标和质量限制见包内说明；尤其不能把 CNN 分类准确率当作贴纸生成质量。
+
 当前默认方案（2026-11-22）
 用户帖子 → 自训 GRU 注意力/复制编码器解码器 → 可编辑提示词 → OpenAI GPT Image API。
 本地所有推理和新增提示词训练固定使用 CPU，不启动 GPU。原 COCO 扩散训练保持暂停。
