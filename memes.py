@@ -1,12 +1,22 @@
 """Retrieve a public meme catalog and shortlist templates for local reranking."""
 
-from functools import lru_cache
+from hashlib import sha256
 import json
+from pathlib import Path
 import re
+from secrets import randbits
+from threading import Lock
 from time import monotonic
 from urllib.request import Request, urlopen
 
 CATALOG_URL = "https://api.imgflip.com/get_memes"
+ROOT = Path(__file__).resolve().parent
+CACHE_FILE = ROOT / ".model-cache" / "memes" / "catalog.json"
+SNAPSHOT_FILE = ROOT / "content" / "meme_catalog.json"
+ANNOTATIONS_FILE = ROOT / "content" / "meme_annotations.json"
+_catalog_lock = Lock()
+_catalog_state = None
+_catalog_until = 0
 
 # Verified templates and their common uses, kept as a fallback if Imgflip is unreachable.
 # (Imgflip ID, title, image filename, use, retrieval terms)
@@ -36,32 +46,139 @@ TEMPLATES = (
 )
 
 
-@lru_cache(maxsize=1)
-def popular_templates(_time_bucket):
+def _read_json(path):
     try:
-        request = Request(CATALOG_URL, headers={"User-Agent": "PostPalette/1.0", "Accept": "application/json"})
-        with urlopen(request, timeout=4) as response:
-            data = json.loads(response.read(262144))
-        rows = data["data"]["memes"]
-        if data["success"] is True and isinstance(rows, list):
-            return {row["id"]: (rank, row["url"]) for rank, row in enumerate(rows)
-                    if isinstance(row, dict) and isinstance(row.get("id"), str)
-                    and isinstance(row.get("url"), str)
-                    and re.fullmatch(r"https://i\.imgflip\.com/[a-z0-9]+\.(?:jpg|jpeg|png|webp)", row["url"])}
-    except (OSError, ValueError, KeyError, TypeError):
-        pass
-    return {}
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
 
 
-def shortlist(post):
-    popular = popular_templates(int(monotonic() // 600))
-    words = set(re.findall(r"[a-z]+", post.lower()))
-    candidates = sorted(
-        TEMPLATES,
-        key=lambda meme: (-len(words.intersection(meme[4].split())), popular.get(meme[0], (999, None))[0]),
-    )[:8]
-    return [
-        {"name": name, "use": use, "image_url": popular.get(meme_id, (999, f"https://i.imgflip.com/{filename}"))[1],
-         "source_url": f"https://imgflip.com/memegenerator/{meme_id}"}
-        for meme_id, name, filename, use, _ in candidates
-    ]
+def _valid_rows(data):
+    """Accept only bounded template metadata and image URLs on the existing host."""
+    rows = data.get("memes", []) if isinstance(data, dict) else []
+    if not isinstance(rows, list):
+        return []
+    valid = {}
+    for row in rows[:1000]:
+        if not isinstance(row, dict):
+            continue
+        meme_id, name, url = row.get("id"), row.get("name"), row.get("url")
+        if (isinstance(meme_id, str) and re.fullmatch(r"[0-9]{1,20}", meme_id)
+                and isinstance(name, str) and 0 < len(name.strip()) <= 160
+                and isinstance(url, str)
+                and re.fullmatch(r"https://i\.imgflip\.com/[a-z0-9]+\.(?:jpg|jpeg|png|webp)", url)):
+            valid.setdefault(meme_id, {"id": meme_id, "name": name.strip(), "url": url})
+    return list(valid.values())
+
+
+def load_catalog():
+    """Merge the full live directory, last good cache, and bundled snapshot.
+
+    Only public template metadata is cached; user posts never leave the machine.
+    Successful fetches have a ten-minute TTL; failures retry after one minute.
+    """
+    global _catalog_state, _catalog_until
+    with _catalog_lock:
+        if _catalog_state is not None and monotonic() < _catalog_until:
+            return _catalog_state
+        bundled = _valid_rows(_read_json(SNAPSHOT_FILE))
+        cached = _valid_rows(_read_json(CACHE_FILE))
+        live = []
+        try:
+            request = Request(CATALOG_URL, headers={"User-Agent": "PostPalette/1.0", "Accept": "application/json"})
+            with urlopen(request, timeout=4) as response:
+                data = json.loads(response.read(1048576))
+            if isinstance(data, dict) and data.get("success") is True:
+                live = _valid_rows(data.get("data"))
+        except (OSError, ValueError, TypeError):
+            pass
+        mode = "live" if live else "cached" if cached else "bundled" if bundled else "fallback"
+        merged = {}
+        for row in live + cached + bundled:
+            merged.setdefault(row["id"], row)
+        for meme_id, name, filename, _, _ in TEMPLATES:
+            merged.setdefault(meme_id, {"id": meme_id, "name": name, "url": f"https://i.imgflip.com/{filename}"})
+        # Retain past popular templates as well as today's list, bounded to 500.
+        rows = list(merged.values())[:500]
+        if live:
+            try:
+                CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+                temporary = CACHE_FILE.with_suffix(".tmp")
+                temporary.write_text(json.dumps({"memes": rows}, ensure_ascii=False), encoding="utf-8")
+                temporary.replace(CACHE_FILE)
+            except OSError:
+                pass  # A read-only cache must not break recommendations.
+        annotations = _read_json(ANNOTATIONS_FILE)
+        if not isinstance(annotations, dict):
+            annotations = {}
+        defaults = {row[0]: {"use": row[3], "terms": row[4]} for row in TEMPLATES}
+        templates = []
+        for rank, row in enumerate(rows):
+            note = annotations.get(row["id"], defaults.get(row["id"], {}))
+            templates.append({"id": row["id"], "name": row["name"], "image_url": row["url"],
+                              "source_url": f"https://imgflip.com/memegenerator/{row['id']}",
+                              "use": note.get("use", "Use only when the template title clearly fits the post."),
+                              "terms": note.get("terms", ""), "rank": rank})
+        _catalog_state = {"templates": templates, "mode": mode, "live_count": len(live)}
+        _catalog_until = monotonic() + (600 if live else 60)
+        return _catalog_state
+
+
+def validate_exclusions(value):
+    if (not isinstance(value, list) or len(value) > 120
+            or any(not isinstance(item, str) or not re.fullmatch(r"[0-9]{1,20}", item) for item in value)):
+        raise ValueError("已看梗图列表必须是最多 120 个有效模板编号。")
+    return list(dict.fromkeys(value))
+
+
+# Explicit lexical expansion, not an embedding model or a learned classifier.
+TOPICS = (
+    "food eat eating meal barbecue bbq grill cook cooking hungry restaurant dinner lunch snack delicious",
+    "friend friends friendship together group team party hangout collaboration",
+    "work working job office boss meeting salary paid money pay",
+    "study studying homework exam exams school university thesis graduation graduate project deadline",
+    "happy joy excited celebrate celebration win success finished finish proud congratulations cheers",
+    "sad sadness lonely loneliness disappointed miss loss cry crying",
+    "tired exhausted stress stressful overwhelmed panic chaos sleepless burnout",
+    "cat kitten dog puppy pet pets animal",
+    "exercise gym workout run running bike cycling sport sports strong strength",
+    "wait waiting delay late loading queue patience forever",
+    "surprise surprised shock shocked unexpected realize realization",
+    "fail failure mistake wrong backfire accident disaster burn burnt burning",
+    "choice choices choose decision decide dilemma options prefer instead",
+    "computer laptop coding code programming bug debugging technology internet wifi",
+)
+STOP_WORDS = set("a an the i me my we our you your it is are was were be been to of for with and or at in on that this today just so very not have has had do did from".split())
+
+
+def _words(text):
+    words = set(re.findall(r"[a-z]+", text.lower())) - STOP_WORDS
+    # A lightweight plural normalization helps title and purpose keywords align.
+    return words | {word[:-1] for word in words if len(word) > 4 and word.endswith("s")}
+
+
+def shortlist(post, exclude_ids=(), *, catalog=None, limit=24):
+    catalog = load_catalog() if catalog is None else catalog
+    excluded = set(exclude_ids)
+    available = [row for row in catalog["templates"] if row["id"] not in excluded]
+    words = _words(post)
+    expanded = set(words)
+    for topic in TOPICS:
+        terms = set(topic.split())
+        if words & terms:
+            expanded.update(terms)
+    seed = str(randbits(64))
+
+    def relevance(row):
+        terms = _words(row["name"] + " " + row["use"] + " " + row["terms"])
+        return 3 * len(words & terms) + len((expanded - words) & terms)
+
+    # Relevance first, varied tie breaks. Popularity is only a small secondary hint.
+    ranked = sorted(available, key=lambda row: (
+        -relevance(row), row["rank"] // 25,
+        sha256((seed + row["id"]).encode()).digest()))
+    # Keep 18 lexical matches and explore six from the next 36 for LLM reranking.
+    primary = ranked[:max(0, limit - 6)]
+    rest = ranked[len(primary):len(primary) + 36]
+    rest.sort(key=lambda row: sha256((row["id"] + seed).encode()).digest())
+    return primary + rest[:limit - len(primary)]

@@ -17,6 +17,11 @@ os.environ.setdefault("HF_HOME", str(CACHE / "huggingface"))
 
 from models import DOODLE_GENERATORS, LLM, ModelError, generate_image, generate_prompt, rewrite_post, suggest, training_status
 from references import find_references
+from memes import validate_exclusions
+from photo_posts import photo_status, recognize_photo, write_photo_post
+from people_analysis import analyze_people, model_status as people_model_status
+from activity_posts import recognize_activity, activity_status
+from photo_analysis import analyze_photo
 from image_api import generate_api_image, image_status, load_environment
 from scratch.config import CATEGORIES
 
@@ -28,6 +33,7 @@ FILES = {
     "/index.html": ("index.html", "text/html; charset=utf-8"),
     "/style.css": ("style.css", "text/css; charset=utf-8"),
     "/app.js": ("app.js", "text/javascript; charset=utf-8"),
+    "/photo.js": ("photo.js", "text/javascript; charset=utf-8"),
 }
 
 
@@ -85,6 +91,9 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
                            "scene": "external OpenAI GPT Image API"},
                 "checkpoints": training_status(),
                 "image_api": image_status(),
+                "photo_tags": photo_status(),
+                "people_models": people_model_status(),
+                "daily_activity": activity_status(),
             })
         else:
             self.send_json({"error": "路径不存在。"}, HTTPStatus.NOT_FOUND)
@@ -107,12 +116,29 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
         if not self.allowed_request():
             return
         path = urlsplit(self.path).path
-        if path not in ("/api/suggest", "/api/image", "/api/prompt", "/api/gpt-image", "/api/rewrite", "/api/references"):
+        if path not in ("/api/suggest", "/api/image", "/api/prompt", "/api/gpt-image", "/api/rewrite", "/api/references", "/api/photo-tags", "/api/photo-post", "/api/photo-people", "/api/photo-activity", "/api/photo-analyze"):
             self.send_json({"error": "路径不存在。"}, HTTPStatus.NOT_FOUND)
             return
 
         try:
+            if path in ("/api/photo-tags", "/api/photo-people", "/api/photo-activity", "/api/photo-analyze"):
+                if self.headers.get_content_type() not in ("image/jpeg", "image/png", "image/webp"):
+                    raise ValueError("请上传 JPEG、PNG 或 WebP 照片。")
+                size = int(self.headers.get("Content-Length", "0"))
+                if not 1 <= size <= 8 * 1024 * 1024:
+                    raise ValueError("照片必须小于等于 8 MB。")
+                content = self.rfile.read(size)
+                if len(content) != size:
+                    raise ValueError("照片上传不完整，请重试。")
+                handler={"/api/photo-people":analyze_people,"/api/photo-tags":recognize_photo,"/api/photo-activity":recognize_activity,"/api/photo-analyze":analyze_photo}[path]
+                self.send_json(handler(content))
+                return
             data = self.read_payload()
+            if path == "/api/photo-post":
+                self.send_json(write_photo_post(data.get("labels"), data.get("context", ""),
+                                               data.get("style", "concise"), data.get("confirmed"),
+                                               data.get("activity"),data.get("activity_confirmed",False)))
+                return
             if path == "/api/references":
                 self.send_json(find_references(field(data, "post", 1000)))
                 return
@@ -139,8 +165,9 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
                 use_sentiment = data.get("use_sentiment", True)
                 if type(use_sentiment) is not bool:
                     raise ValueError("情绪参考选项必须是布尔值。")
+                exclude_ids = validate_exclusions(data.get("exclude_ids", []))
                 self.ensure_dependencies()
-                result = suggest(post, use_sentiment)
+                result = suggest(post, use_sentiment, exclude_ids)
                 self.send_json(result)
                 return
 

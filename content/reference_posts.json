@@ -1,0 +1,29 @@
+{
+  "description": "AI 编写的双语项目示例，用于本地检索演示；非真实用户帖子、非网络搜索结果。英文关键词仅用于双语词面匹配。",
+  "items": [
+    {"id":"barbecue","topic":"烧烤聚会","text":"今天和朋友一起烧烤，边烤边聊。火候还需要练习，不过一起吃饭的快乐已经到位了。","keywords":"barbecue bbq grill friends food cooking park"},
+    {"id":"dinner","topic":"朋友聚餐","text":"和朋友围坐一桌，饭菜是聊天的开场白。吃完这一顿，又多了一些可以回想的小事。","keywords":"dinner restaurant friends meal gathering"},
+    {"id":"cooking","topic":"自己做饭","text":"今天自己下厨，从备菜到收拾厨房都亲自完成。味道还有进步空间，但做完一顿饭很有成就感。","keywords":"cook cooking kitchen homemade food meal"},
+    {"id":"baking","topic":"烘焙蛋糕","text":"第一次尝试烘焙蛋糕，认真看步骤，也认真等出炉。先记录这次尝试，下次再慢慢调整。","keywords":"baking cake bread oven dessert"},
+    {"id":"birthday","topic":"生日庆祝","text":"又过了一次生日。谢谢记得这一天的人，也希望新的一岁能把喜欢的事情坚持下去。","keywords":"birthday celebration cake wishes"},
+    {"id":"thesis","topic":"论文提交","text":"论文终于提交了，反复修改的日子暂时告一段落。先让自己休息一下，再准备下一阶段。","keywords":"thesis dissertation submission writing graduate deadline"},
+    {"id":"exam","topic":"考试结束","text":"考试终于结束了。准备时总觉得还有没复习到的地方，现在先把紧绷的心情放下来。","keywords":"exam test study studying revision school"},
+    {"id":"deadline","topic":"赶作业","text":"作业还没完成，截止时间却已经很近了。把剩下的任务拆小，一项一项处理，希望能按时交上。","keywords":"homework assignment deadline project studying"},
+    {"id":"graduation","topic":"毕业","text":"毕业让一个阶段有了明确的句号。舍不得熟悉的日常，也期待接下来能遇见什么。","keywords":"graduation university college graduate farewell"},
+    {"id":"work","topic":"工作加班","text":"又是忙着处理工作的晚上。先把最重要的事情做完，也提醒自己别把休息一直往后推。","keywords":"work overtime office busy job"},
+    {"id":"offer","topic":"求职录用","text":"收到录用消息的那一刻，之前等待时的忐忑终于松了一些。感谢这段时间认真准备的自己。","keywords":"job offer interview hiring career"},
+    {"id":"beach","topic":"海边旅行","text":"今天去海边走了走，听海浪，也看看远处。没有安排太多事情，只想把这段放松的时间记下来。","keywords":"beach ocean sea waves vacation sunset"},
+    {"id":"hiking","topic":"爬山徒步","text":"爬山时才发现，向上走比想象中费力。一路慢慢调整节奏，也慢慢看见不一样的风景。","keywords":"hiking mountain trail climbing outdoor nature"},
+    {"id":"camping","topic":"户外露营","text":"这次露营换了一种过周末的方式。搭帐篷、整理东西，然后坐下来，感受和平时不一样的节奏。","keywords":"camping tent outdoors weekend nature"},
+    {"id":"travel","topic":"城市旅行","text":"来到一座不熟悉的城市，沿着街道慢慢走。旅行不一定要把行程填满，留一点随意也很好。","keywords":"travel trip city sightseeing vacation"},
+    {"id":"running","topic":"跑步运动","text":"今天又出去跑步了。速度不是重点，能按计划出门、完成这一段，就是值得记录的进步。","keywords":"running run jogging exercise workout fitness"},
+    {"id":"gym","topic":"健身训练","text":"完成了今天的健身训练。动作还需要练习，体能也还要慢慢积累，先把规律坚持下来。","keywords":"gym fitness training exercise workout weights"},
+    {"id":"cat","topic":"猫咪日常","text":"猫咪又占据了最舒服的位置。看它安安静静待着，自己的节奏也跟着慢了下来。","keywords":"cat kitten pet sofa sleeping"},
+    {"id":"dog","topic":"遛狗日常","text":"带狗狗出门散步，熟悉的路也能被它走出新鲜感。原来认真看看周围，也是一种放松。","keywords":"dog puppy pet walking walk"},
+    {"id":"coffee","topic":"咖啡休息","text":"给自己留一点喝咖啡的时间。先放下手头的事情，休息片刻，再继续今天的安排。","keywords":"coffee cafe cup break relaxing"},
+    {"id":"rain","topic":"雨天心情","text":"今天下雨，出门的节奏也慢了下来。有些计划临时改变了，就把这一天过得简单一点。","keywords":"rain rainy weather umbrella mood"},
+    {"id":"snow","topic":"下雪","text":"下雪让熟悉的景色变了样。出门多留一点时间，也给自己留一点欣赏冬天的心情。","keywords":"snow winter weather snowing"},
+    {"id":"concert","topic":"音乐演出","text":"听完一场演出，熟悉的旋律还在脑海里。现场的感觉很难完全写出来，就先记录这份喜欢。","keywords":"concert music live performance band"},
+    {"id":"movie","topic":"看电影","text":"看完电影，故事还没有完全从脑海里退场。有些片段想再想一想，也想找个人聊聊。","keywords":"movie film cinema watching story"}
+  ]
+}

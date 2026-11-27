@@ -14,7 +14,7 @@ const generator = byId("generator");
 const doodleModel = byId("doodle-model");
 const scenePrompt = byId("scene-prompt");
 const modes = [...document.querySelectorAll('input[name="format"]')];
-const controls = [post, caption, category, seed, color, generator, doodleModel, scenePrompt, useSentiment, ...modes, byId("sample"), byId("analyze"), byId("generate"), byId("build-prompt"), byId("rewrite-style"), byId("rewrite-post"), byId("find-references"), byId("restore-post")];
+const controls = [post, caption, category, seed, color, generator, doodleModel, scenePrompt, useSentiment, ...modes, byId("sample"), byId("analyze"), byId("refresh-memes"), byId("generate"), byId("build-prompt"), byId("rewrite-style"), byId("rewrite-post"), byId("find-references"), byId("restore-post"), byId("photo-file"), byId("photo-context"), byId("photo-style"), byId("photo-analyze"), byId("photo-write"), byId("photo-confirm"), byId("activity-choice"), byId("photo-filter"), byId("use-people")];
 const doodleModelNames = { vae: "条件 VAE", gan: "条件 GAN" };
 const sentimentLabels = {
   joy: "喜悦", sadness: "悲伤", anger: "愤怒", fear: "恐惧",
@@ -22,6 +22,22 @@ const sentimentLabels = {
 };
 let imageUrl = null;
 let previousPost = null;
+let appBusy = false;
+let seenMemeIds = [];
+let displayedMemeIds = [];
+let memeTotal = 0;
+let memeRemaining = 0;
+let memePost = "";
+let recentMemeIds = [];
+try {
+  const saved = JSON.parse(localStorage.getItem("postpalette-recent-memes") || "[]");
+  if (Array.isArray(saved)) recentMemeIds = [...new Set(saved.filter((id) => typeof id === "string" && /^[0-9]{1,20}$/.test(id)))].slice(-18);
+} catch { /* Recommendations also work when browser storage is unavailable. */ }
+
+function syncMemeControls() {
+  byId("refresh-memes").disabled = appBusy || !displayedMemeIds.length
+    || memePost !== post.value.trim() || memeRemaining < 3 || seenMemeIds.length > 117;
+}
 
 function say(message, error = false) {
   status.textContent = message;
@@ -40,6 +56,11 @@ function clearImage() {
 function resetForPost() {
   byId("count").textContent = post.value.length + " / 1000";
   byId("memes").replaceChildren();
+  seenMemeIds = [];
+  displayedMemeIds = [];
+  memePost = "";
+  byId("meme-info").textContent = "从完整热门目录匹配梗图；自动避开最近看过的模板。";
+  syncMemeControls();
   sentiment.textContent = "推荐结果来自 Imgflip，可以打开来源或复制图片链接。";
   caption.value = "";
   scenePrompt.value = "";
@@ -61,8 +82,8 @@ async function request(path, data) {
   try {
     response = await fetch(path, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
+      headers: { "Content-Type": data instanceof Blob ? data.type : "application/json" },
+      body: data instanceof Blob ? data : JSON.stringify(data),
     });
   } catch {
     throw new Error("与本地服务的连接中断，请确认启动终端仍在运行。");
@@ -75,14 +96,20 @@ async function request(path, data) {
 }
 
 async function run(message, action) {
+  appBusy = true;
   controls.forEach((control) => { control.disabled = true; });
+  byId("photo-tags").querySelectorAll("input").forEach((input) => { input.disabled = true; });
   say(message);
   try {
     await action();
   } catch (error) {
     say(error.message, true);
   } finally {
+    appBusy = false;
     controls.forEach((control) => { control.disabled = false; });
+    byId("photo-tags").querySelectorAll("input").forEach((input) => { input.disabled = false; });
+    photoWorkflow.syncReview();
+    syncMemeControls();
   }
 }
 
@@ -111,12 +138,8 @@ async function copyText(text) {
   }
 }
 
-byId("rewrite-post").addEventListener("click", () => {
-  if (!requirePost()) return;
-  run("正在本机生成三个改写版本，CPU 首次加载可能需要一些时间…", async () => {
-    const response = await request("/api/rewrite", { post: post.value, style: byId("rewrite-style").value });
-    const result = await response.json();
-    byId("rewrite-results").replaceChildren();
+function showVersions(result, containerId = "rewrite-results") {
+    byId(containerId).replaceChildren();
     result.versions.forEach((version, index) => {
       const card = document.createElement("article");
       card.className = "text-result";
@@ -139,9 +162,16 @@ byId("rewrite-post").addEventListener("click", () => {
         say("已替换帖子。可以继续推荐梗图或生成配图提示词，也可以恢复替换前原文。");
       }), textAction("复制", () => copyText(editor.value)));
       card.append(heading, editor, actions);
-      byId("rewrite-results").append(card);
+      byId(containerId).append(card);
     });
     say(result.notice);
+}
+
+byId("rewrite-post").addEventListener("click", () => {
+  if (!requirePost()) return;
+  run("正在本机生成三个改写版本，CPU 首次加载可能需要一些时间…", async () => {
+    const response = await request("/api/rewrite", { post: post.value, style: byId("rewrite-style").value });
+    showVersions(await response.json());
   });
 });
 
@@ -189,6 +219,7 @@ function showMemes(memes) {
     const image = document.createElement("img");
     image.alt = "";
     image.src = meme.image_url;
+    image.loading = "lazy";
     image.addEventListener("error", () => { image.hidden = true; });
     link.append(image, meme.name);
     const button = document.createElement("button");
@@ -218,7 +249,8 @@ async function checkConnection() {
     if (location.protocol === "file:") throw new Error();
     const response = await fetch("/api/health");
     if (!response.ok) throw new Error();
-    const { missing, checkpoints, image_api: imageApi } = await response.json();
+    const { missing, checkpoints, image_api: imageApi, photo_tags: photoTags, people_models: peopleModels, daily_activity: dailyActivity } = await response.json();
+    photoWorkflow.configure(photoTags, dailyActivity, peopleModels);
     byId("api-status").textContent = imageApi.configured
       ? "图像 API 已配置 · " + imageApi.model + " · " + imageApi.quality
       : "图像 API 尚未配置：请在项目 .env 中填写 OPENAI_API_KEY 后重启服务。";
@@ -241,26 +273,39 @@ byId("sample").addEventListener("click", () => {
   resetForPost();
   post.focus();
 });
-byId("analyze").addEventListener("click", () => {
-  if (!post.value.trim()) {
-    say("先输入一段帖子，或点击「试用示例」。", true);
-    post.focus();
-    return;
-  }
-  run("正在匹配网络梗图并选择涂鸦类别，首次使用可能需要下载 Qwen…", async () => {
-    const response = await request("/api/suggest", { post: post.value, use_sentiment: useSentiment.checked });
+function recommendMemes(refresh = false) {
+  if (!requirePost()) return;
+  if (refresh && memePost !== post.value.trim()) return;
+  // Only template IDs are stored, never post content. Each browser has its own history.
+  const exclusions = refresh ? seenMemeIds : recentMemeIds;
+  run(refresh ? "正在寻找本轮未展示过的梗图…" : "正在匹配完整梗图库，首次使用可能需要加载 Qwen…", async () => {
+    const response = await request("/api/suggest", { post: post.value, use_sentiment: useSentiment.checked, exclude_ids: exclusions });
     const result = await response.json();
     showMemes(result.memes);
-    caption.value = result.caption;
-    category.value = result.category;
-    clearImage();
+    displayedMemeIds = result.memes.map((meme) => meme.id);
+    seenMemeIds = [...new Set([...exclusions, ...displayedMemeIds])];
+    recentMemeIds = [...new Set([...recentMemeIds.filter((id) => !displayedMemeIds.includes(id)), ...displayedMemeIds])].slice(-18);
+    try { localStorage.setItem("postpalette-recent-memes", JSON.stringify(recentMemeIds)); } catch { /* optional */ }
+    memePost = post.value.trim();
+    memeTotal = result.catalog.total;
+    memeRemaining = result.catalog.remaining;
+    const source = { live: "在线目录", cached: "上次成功缓存，在线更新暂不可用", bundled: "项目内置目录，在线更新暂不可用", fallback: "基础备用目录" }[result.catalog.mode] || "模板目录";
+    byId("meme-info").textContent = "当前图库 " + memeTotal + " 张 · " + source + "。"
+      + (memeRemaining < 3 || seenMemeIds.length > 117 ? " 本轮浏览已结束，可点击「推荐梗图」开始新一轮。" : " 换一批会避开本轮已排除和展示的模板。");
+    if (!refresh) {
+      caption.value = result.caption;
+      category.value = result.category;
+      clearImage();
+    }
     sentiment.textContent = result.sentiment
       ? "情绪模型判断为" + (sentimentLabels[result.sentiment.label] || result.sentiment.label)
         + "（模型分数 " + Math.round(result.sentiment.score * 100) + "%）"
       : "本次推荐未启用情绪参考。";
-    say("已推荐 3 张 Imgflip 梗图，并选择涂鸦类别与配文。");
+    say(refresh ? "已换成 3 张未展示的梗图。" : "已从扩展图库推荐 3 张梗图，并选择涂鸦类别与配文。");
   });
-});
+}
+byId("analyze").addEventListener("click", () => recommendMemes());
+byId("refresh-memes").addEventListener("click", () => recommendMemes(true));
 
 for (const control of [category, seed, color, doodleModel, ...modes]) {
   control.addEventListener(control === seed ? "input" : "change", () => {
@@ -368,4 +413,4 @@ if (importedPost) {
   history.replaceState(null, "", location.pathname + location.search);
 }
 resetForPost();
-checkConnection();
+document.addEventListener("DOMContentLoaded", checkConnection);
