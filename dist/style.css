@@ -26,7 +26,7 @@ button:disabled { cursor: default; opacity: .48; }
 h1 { margin: 14px 0; font-size: clamp(31px, 5vw, 56px); letter-spacing: -.045em; line-height: 1.2; }
 h1 span { color: var(--purple); }
 .intro > p:last-child, .hint, footer { color: var(--muted); }
-.workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.17fr); gap: 20px; }
+.workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.17fr); gap: 20px; align-items: start; }
 .card { border-radius: 22px; border: 1px solid var(--border); background: #fff; padding: 24px; box-shadow: 0 9px 25px rgba(49,33,79,.055); }
 h2 { margin: 0 0 20px; font-size: 20px; }
 h3 { font-size: 14px; margin: 0 0 12px; }
@@ -41,6 +41,43 @@ textarea::placeholder { color: #716884; }
 .secondary { border: 1px solid #e1d8ef; background: #f7f2ff; color: var(--purple); }
 .secondary:not(:disabled):hover { background: #ede2ff; }
 .recommendations { margin-top: 22px; border-top: 1px solid var(--border); padding-top: 17px; }
+.writing-tools { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); }
+.photo-tools { border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 16px; }
+.photo-tools summary { color: var(--purple); font-size: 14px; font-weight: 700; cursor: pointer; }
+.photo-step { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+.photo-step h3 { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.step-number { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: #eee7fa; color: var(--purple); font-size: 12px; }
+#photo-analyze, #photo-write { width: 100%; margin-top: 10px; }
+#photo-feedback { line-height: 1.6; }
+#photo-feedback[data-state="error"] { color: #86233c; }
+.photo-label-title { margin: 12px 0 6px; }
+.photo-inspection { margin: 16px 0; padding: 10px; background: #faf8fd; border: 1px solid var(--border); border-radius: 9px; }
+.photo-inspection h4 { margin: 14px 0 6px; font-size: 12px; }
+.photo-inspection ul { padding-left: 18px; line-height: 1.7; }
+.photo-confirm { margin: 14px 0 4px; line-height: 1.6; align-items: flex-start; }
+.photo-confirm input { margin-top: 4px; flex-shrink: 0; }
+#photo-review-summary { line-height: 1.6; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+#photo-file { display: block; width: 100%; margin: 10px 0; font-size: 12px; }
+#photo-preview { max-height: 240px; max-width: 100%; margin: 10px auto; border-radius: 9px; }
+#photo-context { min-height: 75px; margin-bottom: 10px; }
+#people-overlay { width: 100%; max-height: 320px; object-fit: contain; margin-top: 10px; border-radius: 9px; }
+#people-results p { font-size: 12px; line-height: 1.6; padding: 8px; border: 1px solid var(--border); border-radius: 8px; }
+#photo-filter { width: 100%; margin-top: 6px; padding: 9px; border: 1px solid var(--border); border-radius: 8px; font: inherit; }
+#photo-style { width: 100%; margin-top: 7px; padding: 9px; border: 1px solid var(--border); border-radius: 8px; font: inherit; }
+#activity-choice { width: 100%; margin: 7px 0 10px; padding: 9px; border: 1px solid var(--border); border-radius: 8px; font: inherit; }
+#activity-details { line-height: 1.6; }
+#photo-selected-tags { margin-top: 6px; max-height: none; }
+.photo-tag-list { display: flex; flex-wrap: wrap; gap: 7px; max-height: 220px; overflow-y: auto; margin: 12px 0; }
+.photo-tag-list label { display: flex; align-items: center; gap: 4px; padding: 5px 8px; background: #f3eff8; border-radius: 8px; font-size: 12px; }
+.photo-tag-list label[hidden] { display: none; }
+.photo-tag-list input { accent-color: var(--purple); }
+#rewrite-style { display: block; width: 100%; margin-top: 8px; padding: 9px; border: 1px solid #ddd4eb; border-radius: 8px; color: var(--ink); background: #fcfbfe; font: inherit; }
+.text-result { margin-top: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: #fcfbfe; }
+.text-result h4 { margin: 0 0 8px; font-size: 13px; }
+.text-result p { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.6; }
+.text-result textarea { min-height: 95px; font-size: 13px; }
+.text-actions { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 9px; }
 .memes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .meme { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .meme a { color: var(--purple); font-size: 12px; overflow-wrap: anywhere; font-weight: 700; }

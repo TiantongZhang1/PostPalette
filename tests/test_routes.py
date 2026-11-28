@@ -59,7 +59,13 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(content, PNG)
         self.assertEqual(response.getheader("X-Image-Seed"), "2026")
         self.assertEqual(response.getheader("X-Category-Score"), "0.9123")
-        generate.assert_called_once_with("cat", "#25203c", True, 2026)
+        generate.assert_called_once_with("cat", "#25203c", True, 2026, generator="vae")
+
+    def test_image_passes_selected_generator(self):
+        with patch("server.generate_image", return_value=(PNG, 0.5)) as generate:
+            response, _ = self.post("/api/image", {**DOODLE, "generator": "gan"})
+        self.assertEqual(response.status, 200)
+        self.assertEqual(generate.call_args.kwargs["generator"], "gan")
 
     def test_image_without_seed_picks_one(self):
         with patch("server.generate_image", return_value=(PNG, 0.5)) as generate:
@@ -72,7 +78,7 @@ class RouteTests(unittest.TestCase):
     def test_image_rejects_invalid_input(self):
         cases = [{**DOODLE, "category": "dog"}, {**DOODLE, "color": "#000000"},
                  {**DOODLE, "mode": "poster"}, {**DOODLE, "seed": -1}, {**DOODLE, "seed": 2**32},
-                 {**DOODLE, "seed": "7"}, {**DOODLE, "seed": True}]
+                 {**DOODLE, "seed": "7"}, {**DOODLE, "seed": True}, {**DOODLE, "generator": "diffusion"}]
         with patch("server.generate_image") as generate:
             for body in cases:
                 with self.subTest(body=body):
@@ -87,8 +93,13 @@ class RouteTests(unittest.TestCase):
         self.assertIn("vae", json.loads(content)["error"])
 
     def test_suggest_without_emotion_weights_returns_degraded_result(self):
+        templates = [{"id": str(n), "name": f"t{n}", "use": "u", "terms": "", "rank": n,
+                      "image_url": "", "source_url": ""} for n in range(5)]
+        catalog = {"templates": templates, "mode": "bundled", "live_count": 0}
+        # load_catalog is patched so the test never fetches Imgflip or writes .model-cache.
         with patch.object(models, "language_model", return_value=(None, None)), \
-                patch.object(models, "shortlist", return_value=[{"name": f"t{n}", "use": "u"} for n in range(5)]), \
+                patch.object(models, "load_catalog", return_value=catalog), \
+                patch.object(models, "shortlist", return_value=templates), \
                 patch.object(models, "complete", return_value='{"meme_numbers":[1,2,3],"category":"sun","caption":"Hi"}'):
             response, content = self.post("/api/suggest", {"post": "sunny day", "use_sentiment": True})
         self.assertEqual(response.status, 200)

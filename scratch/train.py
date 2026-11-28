@@ -125,14 +125,48 @@ def evaluate(task, model, loader, device, pos_weight):
     return metrics
 
 
+def resolve_device(task, requested):
+    """Generator tasks default to CPU; the original three keep their documented CUDA default."""
+    if requested is not None:
+        return requested
+    return "cpu" if task == "gan" else "cuda"
+
+
+def resolve_lr(task, requested):
+    """Adversarial training wants the DCGAN rate; the original three keep theirs."""
+    if requested is not None:
+        return requested
+    return 2e-4 if task == "gan" else 0.001
+
+
 @torch.inference_mode()
-def save_samples(model, directory, device):
+def recognizability(images, labels, cnn):
+    """Share of drawings the trained classifier assigns to their requested category."""
+    return float(cnn(images).argmax(1).eq(labels).float().mean())
+
+
+def doodle_classifier(device):
+    """Load the trained CNN for model selection. It only ever runs forward."""
+    path = ARTIFACTS / "cnn" / "best.pt"
+    if not path.is_file():
+        raise SystemExit("artifacts/cnn/best.pt is missing. Train the CNN before the GAN.")
+    record = torch.load(path, map_location="cpu", weights_only=True)
+    cnn = create_network("cnn", record["config"]).to(device).eval()
+    cnn.load_state_dict(record["model"])
+    for parameter in cnn.parameters():
+        parameter.requires_grad_(False)
+    return cnn
+
+
+@torch.inference_mode()
+def save_samples(model, directory, device, task="vae"):
     from PIL import Image
 
     model.eval()
     labels = torch.arange(len(CATEGORIES), device=device).repeat_interleave(8)
     noise = torch.randn(len(labels), model.latent, generator=torch.Generator().manual_seed(2026)).to(device)
-    samples = model.decode(noise, labels).sigmoid().cpu().numpy()
+    samples = (model.generate(noise, labels) if task == "gan"
+               else model.decode(noise, labels).sigmoid()).cpu().numpy()
     grid = Image.new("L", (28 * 8, 28 * len(CATEGORIES)), 255)
     for index, drawing in enumerate(samples):
         bitmap = Image.fromarray(np.uint8((1 - drawing[0]) * 255))
@@ -140,22 +174,134 @@ def save_samples(model, directory, device):
     grid.resize((28 * 8 * 3, 28 * len(CATEGORIES) * 3)).save(directory / "samples.png")
 
 
+def gan_parameter_groups(model):
+    """The two halves each optimizer steps. Gradient clipping must cover exactly these."""
+    generator = list(model.condition.parameters()) + list(model.project.parameters()) + list(model.generator.parameters())
+    discriminator = list(model.discriminator.parameters()) + list(model.real.parameters()) + list(model.auxiliary.parameters())
+    return generator, discriminator
+
+
+def gan_optimizers(model, lr):
+    generator, discriminator = gan_parameter_groups(model)
+    return (torch.optim.AdamW(generator, lr=lr, betas=(0.5, 0.999), weight_decay=0.0001),
+            torch.optim.AdamW(discriminator, lr=lr, betas=(0.5, 0.999), weight_decay=0.0001))
+
+
+@torch.inference_mode()
+def validate_gan(model, labels, cnn, device, seed):
+    """The GAN loss says nothing about drawing quality, so select on classifier recognizability."""
+    model.eval()
+    scores, seen = 0.0, 0
+    for start in range(0, len(labels), 256):
+        batch = labels[start:start + 256].to(device)
+        noise = torch.randn(len(batch), model.latent, generator=torch.Generator().manual_seed(seed + start)).to(device)
+        scores += recognizability(model.generate(noise, batch), batch, cnn) * len(batch)
+        seen += len(batch)
+    model.train()
+    return {"recognizability": scores / seen}
+
+
+def train_gan(args, datasets, data_hash, device, directory, checkpoint, epochs, config):
+    directory.mkdir(parents=True, exist_ok=True)
+    model = create_network("gan", config).to(device)
+    if checkpoint:
+        model.load_state_dict(checkpoint["model"])
+    cnn = doodle_classifier(device)
+    groups = gan_parameter_groups(model)
+    optimizers = gan_optimizers(model, args.lr)
+    history, updates, start_epoch, best_score = [], 0, 1, float("-inf")
+    if checkpoint:
+        for optimizer, name in zip(optimizers, ("g", "d")):
+            optimizer.load_state_dict(checkpoint["optimizer"][name])
+        history, updates = checkpoint["history"], checkpoint["trained_updates"]
+        start_epoch, best_score = checkpoint["epoch"] + 1, checkpoint["best_score"]
+    validation_labels = datasets["val"].tensors[1]
+    print(f"Training gan from scratch on {device}; {sum(p.numel() for p in model.parameters()):,} parameters", flush=True)
+    for epoch in range(start_epoch, epochs + 1):
+        torch.manual_seed(args.seed + epoch)
+        model.train()
+        loader = DataLoader(datasets["train"], batch_size=args.batch_size, shuffle=True,
+                            generator=torch.Generator().manual_seed(args.seed + epoch))
+        started, total, seen = time.monotonic(), 0.0, 0
+        for images, labels in loader:
+            images, labels = images.to(device), labels.to(device)
+            noise = torch.randn(len(images), model.latent, device=device)
+            fake = model.generate(noise, labels)
+
+            # Discriminator: real drawings are real and carry their category; generated ones are fake.
+            optimizers[1].zero_grad(set_to_none=True)
+            real_logit, real_classes = model.discriminate(images)
+            fake_logit, fake_classes = model.discriminate(fake.detach())
+            # One-sided label smoothing on the real target only.
+            discriminator_loss = (
+                F.binary_cross_entropy_with_logits(real_logit, torch.full_like(real_logit, 0.9))
+                + F.binary_cross_entropy_with_logits(fake_logit, torch.zeros_like(fake_logit))
+                + F.cross_entropy(real_classes, labels) + F.cross_entropy(fake_classes, labels)
+            )
+            discriminator_loss.backward()
+            nn.utils.clip_grad_norm_(groups[1], 1.0)
+            optimizers[1].step()
+
+            # Generator: make the discriminator call the drawing real and read the right category.
+            optimizers[0].zero_grad(set_to_none=True)
+            fake_logit, fake_classes = model.discriminate(fake)
+            generator_loss = (F.binary_cross_entropy_with_logits(fake_logit, torch.ones_like(fake_logit))
+                              + F.cross_entropy(fake_classes, labels))
+            if not torch.isfinite(generator_loss) or not torch.isfinite(discriminator_loss):
+                raise RuntimeError("Non-finite loss; no checkpoint was saved for this epoch")
+            generator_loss.backward()
+            nn.utils.clip_grad_norm_(groups[0], 1.0)
+            optimizers[0].step()
+
+            total += float(generator_loss.detach()) * len(images)
+            seen += len(images)
+            updates += 1
+        metrics = validate_gan(model, validation_labels, cnn, device, args.seed + epoch)
+        score = metrics["recognizability"]
+        improved = score > best_score
+        best_score = max(best_score, score)
+        history.append({"epoch": epoch, "train_loss": total / seen, "val": metrics,
+                        "beta": None, "seconds": time.monotonic() - started})
+        checkpoint = {
+            "format": 1, "task": "gan", "config": config, "model": model.state_dict(),
+            "optimizer": {"g": optimizers[0].state_dict(), "d": optimizers[1].state_dict()},
+            "epoch": epoch, "trained_updates": updates, "initialization": "random",
+            "data_hash": data_hash, "vocabulary": None, "labels": list(CATEGORIES),
+            "arguments": vars(args), "history": history, "best_score": best_score,
+            "saved_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if improved:
+            save_checkpoint(directory / "best.pt", checkpoint)
+            save_samples(model, directory, device, task="gan")
+        save_checkpoint(directory / "last.pt", checkpoint)
+        save_json(directory / "history.json", history)
+        print(json.dumps(history[-1]), flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("task", choices=("emotion", "cnn", "vae"))
+    parser.add_argument("task", choices=("emotion", "cnn", "vae", "gan"))
     parser.add_argument("--epochs", type=int)
     parser.add_argument("--batch-size", type=int, default=128)
-    parser.add_argument("--lr", type=float, default=0.001)
-    parser.add_argument("--device", choices=("cpu", "cuda"), default="cuda")
+    parser.add_argument("--lr", type=float, default=None,
+                        help="Defaults to 0.001, except gan which defaults to 2e-4")
+    parser.add_argument("--device", choices=("cpu", "cuda"), default=None,
+                        help="Defaults to cuda, except gan which defaults to cpu")
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--evaluate", action="store_true", help="Evaluate the best checkpoint on the test split without training")
     args = parser.parse_args()
-    epochs = args.epochs if args.epochs is not None else {"emotion": 15, "cnn": 12, "vae": 40}[args.task]
+    epochs = args.epochs if args.epochs is not None else {"emotion": 15, "cnn": 12, "vae": 40, "gan": 40}[args.task]
+    # Record the resolved rate, so the checkpoint says what the run actually used.
+    args.lr = resolve_lr(args.task, args.lr)
     if epochs < 1 or args.batch_size < 1 or args.lr <= 0:
         parser.error("epochs, batch size, and learning rate must be positive")
     if args.resume and args.evaluate:
         parser.error("Choose --resume or --evaluate")
+    if args.evaluate and args.task == "gan":
+        parser.error("A generator has no meaningful test-split loss. Inspect artifacts/gan/samples.png "
+                     "and the validation recognizability in artifacts/gan/history.json instead.")
+    device_name = resolve_device(args.task, args.device)
     directory = ARTIFACTS / args.task
     checkpoint_path = directory / ("best.pt" if args.evaluate else "last.pt")
     checkpoint = None
@@ -176,15 +322,18 @@ def main():
         if epochs <= checkpoint["epoch"]:
             parser.error("--epochs must exceed the last completed epoch")
     # No CUDA call or allocation happens until an explicit train/evaluate command reaches this point.
-    if args.device == "cuda" and not torch.cuda.is_available():
+    if device_name == "cuda" and not torch.cuda.is_available():
         parser.error("CUDA is unavailable. Install CUDA PyTorch or pass --device cpu.")
-    device = torch.device(args.device)
+    device = torch.device(device_name)
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     config = {"vocab_size": len(vocabulary)} if args.task == "emotion" else {}
     if checkpoint:
         config = checkpoint["config"]
+    if args.task == "gan":
+        train_gan(args, datasets, data_hash, device, directory, checkpoint, epochs, config)
+        return
     model = create_network(args.task, config).to(device)
     if checkpoint:
         model.load_state_dict(checkpoint["model"])

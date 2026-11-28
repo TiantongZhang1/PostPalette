@@ -1,0 +1,2 @@
+# Only needed for optional HF dataset preparation, not application inference.
+pyarrow>=18,<24

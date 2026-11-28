@@ -20,8 +20,11 @@ import models
 from models import ModelError
 from scratch.config import CATEGORIES, EMOTIONS
 
-CANDIDATES = [{"name": f"template-{number}", "use": "use", "image_url": "", "source_url": ""}
+CANDIDATES = [{"id": str(number), "name": f"template-{number}", "use": "use", "terms": "", "rank": number,
+               "image_url": "", "source_url": ""}
               for number in range(1, 6)]
+# Stands in for memes.load_catalog(), which would otherwise fetch Imgflip and write .model-cache.
+FAKE_CATALOG = {"templates": CANDIDATES, "mode": "bundled", "live_count": 0}
 VALID_REPLY = '{"meme_numbers":[2,1,3],"category":"cat","caption":"Finally done!"}'
 
 
@@ -75,6 +78,7 @@ class SuggestTests(ArtifactsCase):
     def setUp(self):
         super().setUp()
         self.patch("language_model", return_value=(None, None))
+        self.patch("load_catalog", return_value=FAKE_CATALOG)
         self.patch("shortlist", return_value=CANDIDATES)
 
     def test_uses_emotion_model_when_weights_exist(self):
@@ -108,6 +112,10 @@ class SuggestTests(ArtifactsCase):
         self.assertFalse(result["emotion_used"])
         self.assertTrue(result["degraded"])
         self.assertIn("artifacts/emotion/best.pt", result["notices"][0])
+        # Catalog bookkeeping from the expanded meme library is returned alongside the degrade fields.
+        self.assertEqual(result["catalog"]["total"], len(CANDIDATES))
+        self.assertEqual(result["catalog"]["remaining"], len(CANDIDATES) - 3)
+        self.assertEqual({meme["id"] for meme in result["memes"]}, {"1", "2", "3"})
 
     def test_sentiment_off_is_not_reported_as_degraded(self):
         self.patch("complete", side_effect=FakeLanguageModel(VALID_REPLY))
