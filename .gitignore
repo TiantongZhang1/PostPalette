@@ -6,3 +6,8 @@ artifacts/
 .env
 .env.*
 !.env.example
+
+# Trained-model release bundle (see README section 1.2); extract only artifacts/.
+postpalette-*.zip*
+MODEL_INSTALL.txt
+MODEL_MANIFEST.json

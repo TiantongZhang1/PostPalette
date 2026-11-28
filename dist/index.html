@@ -83,6 +83,7 @@
           <div id="photo-drafts" aria-live="polite"></div>
         </details>
         <button class="primary" id="analyze" type="button">✦ 推荐梗图</button>
+        <p class="hint reason" id="analyze-reason"></p>
         <section class="writing-tools" aria-labelledby="writing-title">
           <h3 id="writing-title">完善帖子</h3>
           <label class="field-label" for="rewrite-style">改写风格</label>
@@ -108,6 +109,7 @@
           <button id="refresh-memes" class="secondary" type="button" disabled>换一批梗图</button>
           <p class="hint" id="sentiment">推荐结果来自 Imgflip，可以打开来源或复制图片链接。</p>
           <label class="check"><input id="use-sentiment" type="checkbox" checked> 使用情绪模型辅助推荐</label>
+          <p class="hint reason" id="emotion-reason"></p>
         </div>
       </section>
       <section class="card output">
@@ -120,6 +122,7 @@
         <div id="scene-options">
           <p class="hint" id="api-status">正在检查图像 API 配置…</p>
           <button id="build-prompt" class="secondary" type="button">① 根据帖子生成提示词</button>
+          <p class="hint reason" id="build-reason"></p>
           <p class="hint" id="prompt-info">先填写左侧帖子，再生成并检查提示词。</p>
           <details id="prompt-details" hidden><summary>查看模型生成的场景草稿</summary><p class="hint" id="prompt-draft"></p></details>
           <label for="scene-prompt" class="field-label category-label">发送给 GPT 的提示词（可编辑）</label>
@@ -173,6 +176,7 @@
           <button class="secondary" id="generate" type="button">生成图片</button>
           <button class="secondary" id="download" type="button" disabled>↓ 下载 PNG</button>
         </div>
+        <p class="hint reason" id="generate-reason"></p>
       </section>
     </div>
     <p id="status" class="status" role="status"></p>

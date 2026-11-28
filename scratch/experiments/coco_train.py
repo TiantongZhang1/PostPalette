@@ -14,9 +14,9 @@ from PIL import Image
 import torch
 from torch.nn import functional as F
 
-from .config import ARTIFACTS, DATA, tokenize
+from ..config import ARTIFACTS, DATA, tokenize
 from .photo_diffusion import PhotoUNet, configure_cuda, noise_schedule, sample
-from .train import save_checkpoint, save_json
+from ..train import save_checkpoint, save_json
 
 PROMPTS = (
     "a group of people cooking food on a grill outdoors",

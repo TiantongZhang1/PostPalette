@@ -6,7 +6,7 @@ import sys
 
 import torch
 
-from .config import ARTIFACTS, ROOT
+from ..config import ARTIFACTS, ROOT
 
 
 def main():
@@ -33,7 +33,7 @@ def main():
             return
         batches = min(args.chunk_batches - step % args.chunk_batches, args.steps - step)
         command = [
-            sys.executable, "-X", "utf8", "-m", "scratch.coco_train", "--width", "64",
+            sys.executable, "-X", "utf8", "-m", "scratch.experiments.coco_train", "--width", "64",
             "--batch-size", str(args.batch_size), "--steps", str(args.steps),
             "--hours", str(remaining / 3600), "--session-batches", str(batches),
             "--save-every", str(args.chunk_batches), "--checkpoint-every", "1", "--text-mode", "qwen",

@@ -9,8 +9,8 @@ import numpy as np
 import torch
 from torch.nn import functional as F
 
-from .config import DATA, ROOT
-from .train import save_json
+from ..config import DATA, ROOT
+from ..train import save_json
 
 QWEN = "Qwen/Qwen2.5-1.5B-Instruct"
 

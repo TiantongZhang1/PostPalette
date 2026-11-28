@@ -21,7 +21,7 @@ from scratch.config import CATEGORIES, EMOTIONS
 from scratch.daily_activity import ActivityCNN
 from scratch.networks import create_network
 from scratch.people_networks import ImageClassifier, PersonPoseNet
-from scratch.photo_diffusion import PhotoUNet
+from scratch.experiments.photo_diffusion import PhotoUNet
 from scratch.photo_tags import PhotoTagCNN
 from scratch.prompt_model import PromptWriter
 

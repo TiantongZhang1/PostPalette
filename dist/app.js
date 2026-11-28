@@ -21,6 +21,9 @@ const sentimentLabels = {
   surprise: "惊讶", affection: "关爱", neutral: "中性", other: "其他",
 };
 let imageUrl = null;
+let health = null;
+// Controls that /api/health says cannot work; run() must not re-enable them.
+const blocked = new Set();
 let previousPost = null;
 let appBusy = false;
 let seenMemeIds = [];
@@ -41,7 +44,38 @@ function syncMemeControls() {
 
 function say(message, error = false) {
   status.textContent = message;
-  status.dataset.state = error ? "error" : "";
+  status.dataset.state = error === "warn" ? "warn" : error ? "error" : "";
+}
+
+function block(control, reasonId, reason) {
+  if (reason) blocked.add(control);
+  else blocked.delete(control);
+  control.disabled = Boolean(reason);
+  control.title = reason;
+  byId(reasonId).textContent = reason;
+}
+
+function missingWeights(tasks) {
+  const absent = tasks.filter((task) => !health.checkpoints[task]);
+  return absent.length
+    ? "缺少模型权重 " + absent.map((task) => "artifacts/" + task + "/best.pt").join("、") + "，放入后重启服务。"
+    : "";
+}
+
+function applyAvailability() {
+  if (!health) return;
+  const dependencies = health.missing.length
+    ? "缺少本地依赖 " + health.missing.join(", ") + "，请按 README 安装后重启服务。"
+    : "";
+  const emotion = dependencies || (health.checkpoints.emotion ? ""
+    : "缺少情绪模型权重 artifacts/emotion/best.pt，推荐将只用 Qwen。");
+  if (emotion) useSentiment.checked = false;
+  block(useSentiment, "emotion-reason", emotion);
+  block(byId("analyze"), "analyze-reason", dependencies);
+  block(byId("build-prompt"), "build-reason", dependencies || missingWeights(["prompt"]));
+  block(byId("generate"), "generate-reason", generator.value === "scene"
+    ? (health.image_api.configured ? "" : "未配置 OPENAI_API_KEY：在项目 .env 中填写后重启服务。")
+    : dependencies || missingWeights([doodleModel.value, "cnn"]));
 }
 
 function clearImage() {
@@ -106,7 +140,7 @@ async function run(message, action) {
     say(error.message, true);
   } finally {
     appBusy = false;
-    controls.forEach((control) => { control.disabled = false; });
+    controls.forEach((control) => { control.disabled = blocked.has(control); });
     byId("photo-tags").querySelectorAll("input").forEach((input) => { input.disabled = false; });
     photoWorkflow.syncReview();
     syncMemeControls();
@@ -249,8 +283,10 @@ async function checkConnection() {
     if (location.protocol === "file:") throw new Error();
     const response = await fetch("/api/health");
     if (!response.ok) throw new Error();
-    const { missing, checkpoints, image_api: imageApi, photo_tags: photoTags, people_models: peopleModels, daily_activity: dailyActivity } = await response.json();
+    health = await response.json();
+    const { missing, checkpoints, image_api: imageApi, photo_tags: photoTags, people_models: peopleModels, daily_activity: dailyActivity } = health;
     photoWorkflow.configure(photoTags, dailyActivity, peopleModels);
+    applyAvailability();
     byId("api-status").textContent = imageApi.configured
       ? "图像 API 已配置 · " + imageApi.model + " · " + imageApi.quality
       : "图像 API 尚未配置：请在项目 .env 中填写 OPENAI_API_KEY 后重启服务。";
@@ -294,14 +330,21 @@ function recommendMemes(refresh = false) {
       + (memeRemaining < 3 || seenMemeIds.length > 117 ? " 本轮浏览已结束，可点击「推荐梗图」开始新一轮。" : " 换一批会避开本轮已排除和展示的模板。");
     if (!refresh) {
       caption.value = result.caption;
-      category.value = result.category;
+      if (result.category) category.value = result.category;
       clearImage();
     }
     sentiment.textContent = result.sentiment
       ? "情绪模型判断为" + (sentimentLabels[result.sentiment.label] || result.sentiment.label)
         + "（模型分数 " + Math.round(result.sentiment.score * 100) + "%）"
-      : "本次推荐未启用情绪参考。";
-    say(refresh ? "已换成 3 张未展示的梗图。" : "已从扩展图库推荐 3 张梗图，并选择涂鸦类别与配文。");
+      : result.emotion_requested && !result.emotion_used
+        ? "本次未使用情绪模型（缺少权重），只用 Qwen 推荐。"
+        : "本次推荐未启用情绪参考。";
+    const notices = result.notices || [];
+    if (result.degraded && notices.length) {
+      say((refresh ? "已换成 3 张未展示的梗图" : "已从扩展图库推荐 3 张梗图") + "（降级结果）：" + notices.join(" "), "warn");
+    } else {
+      say(refresh ? "已换成 3 张未展示的梗图。" : "已从扩展图库推荐 3 张梗图，并选择涂鸦类别与配文。");
+    }
   });
 }
 byId("analyze").addEventListener("click", () => recommendMemes());
@@ -315,11 +358,13 @@ for (const control of [category, seed, color, doodleModel, ...modes]) {
   });
 }
 
+doodleModel.addEventListener("change", applyAvailability);
 generator.addEventListener("change", () => {
   byId("scene-options").hidden = generator.value !== "scene";
   byId("doodle-options").hidden = generator.value === "scene";
   byId("seed-options").hidden = generator.value === "scene";
   byId("preview").classList.toggle("sticker", generator.value !== "scene" && mode() === "sticker");
+  applyAvailability();
   clearImage();
   say("");
 });

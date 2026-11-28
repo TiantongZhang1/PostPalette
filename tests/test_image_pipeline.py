@@ -3,12 +3,13 @@
 import base64
 from http.client import HTTPConnection
 from http.server import ThreadingHTTPServer
+from io import BytesIO
 import json
 import os
 import threading
 import unittest
 from unittest.mock import patch
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 
 import image_api
 from models import ModelError
@@ -53,6 +54,53 @@ class ImagePipelineTests(unittest.TestCase):
             with self.assertRaises(ModelError) as caught:
                 image_api.generate_api_image("a scene")
             self.assertNotIn("test-secret", str(caught.exception))
+
+    def test_provider_errors_are_logged_without_credentials(self):
+        key = "sk-proj-REALSECRET1234567890abcd"
+        body = json.dumps({"error": {
+            "message": f"Incorrect API key provided: sk-proj-****abcd. Sent {key}",
+            "type": "invalid_request_error", "code": "invalid_api_key"}}).encode()
+        failures = [
+            HTTPError("https://api.openai.com", 401, "Unauthorized", {"x-request-id": "req_42"}, BytesIO(body)),
+            HTTPError("https://api.openai.com", 502, "Bad Gateway", {}, BytesIO(b"<html>Bearer " + key.encode() + b"</html>")),
+            URLError(TimeoutError("timed out")),
+        ]
+        server = ThreadingHTTPServer(("127.0.0.1", 0), WorkspaceHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with patch.dict(os.environ, {"OPENAI_API_KEY": key}), self.assertLogs(level="ERROR") as logs:
+                for failure in failures:
+                    with patch.object(image_api, "urlopen", side_effect=failure):
+                        connection = HTTPConnection("127.0.0.1", server.server_port, timeout=5)
+                        connection.request("POST", "/api/gpt-image", json.dumps({"prompt": "a scene"}),
+                                           {"Content-Type": "application/json"})
+                        response = connection.getresponse()
+                        content = response.read().decode()
+                        connection.close()
+                    self.assertEqual(response.status, 503)
+                    self.assertNotIn("REALSECRET", content)
+                    self.assertNotIn("invalid_api_key", content, "provider details stay in the server log")
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+        log = "\n".join(logs.output)
+        self.assertIn("OpenAI HTTP 401", log)
+        self.assertIn("req_42", log)
+        self.assertIn("invalid_api_key", log)
+        self.assertIn("OpenAI HTTP 502", log)
+        self.assertIn("URLError", log)
+        for secret in ("REALSECRET", "****abcd", key):
+            self.assertNotIn(secret, log)
+
+    def test_error_keeps_original_cause(self):
+        error = HTTPError("https://api.openai.com", 403, "Forbidden", {}, BytesIO(b"{}"))
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "test-secret"}), patch.object(image_api, "urlopen", side_effect=error):
+            with self.assertRaises(ModelError) as caught:
+                image_api.generate_api_image("a scene")
+        self.assertIs(caught.exception.__cause__, error)
+        self.assertIn("OpenAI HTTP 403", caught.exception.log_detail)
 
     def test_http_routes_and_origin_validation(self):
         server = ThreadingHTTPServer(("127.0.0.1", 0), WorkspaceHandler)

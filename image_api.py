@@ -5,6 +5,7 @@ import binascii
 import json
 import os
 from pathlib import Path
+import re
 from threading import Lock
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -29,6 +30,38 @@ def image_status():
     return {"configured": bool(os.environ.get("OPENAI_API_KEY", "").strip()),
             "model": os.environ.get("POSTPALETTE_IMAGE_MODEL", "gpt-image-1.5"),
             "quality": os.environ.get("POSTPALETTE_IMAGE_QUALITY", "medium")}
+
+
+def redact(text):
+    """Remove the configured key and anything shaped like an OpenAI key from diagnostic text."""
+    text = str(text)
+    key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if key:
+        text = text.replace(key, "[REDACTED]")
+    # OpenAI 401 bodies echo a masked key such as "sk-proj-****abcd"; drop it entirely.
+    text = re.sub(r"sk-[A-Za-z0-9_\-*.]+", "sk-[REDACTED]", text)
+    return re.sub(r"(?i)bearer\s+\S+", "Bearer [REDACTED]", text)
+
+
+def provider_detail(error):
+    """Summarize an OpenAI HTTP error for the server log only; never sent to the browser."""
+    try:
+        body = error.read(4096).decode("utf-8", "replace")
+    except Exception:
+        body = ""
+    try:
+        info = json.loads(body).get("error") or {}
+        summary = f"type={info.get('type')} code={info.get('code')} message={info.get('message')}"
+    except (ValueError, AttributeError):
+        summary = "body=" + body
+    request_id = error.headers.get("x-request-id") if error.headers else None
+    return redact(f"OpenAI HTTP {error.code} request_id={request_id} {summary}")[:1000]
+
+
+def failure(message, log_detail, cause):
+    error = ModelError(message)
+    error.log_detail = redact(log_detail)[:1000]
+    raise error from cause
 
 
 def generate_api_image(prompt):
@@ -59,10 +92,11 @@ def generate_api_image(prompt):
         messages = {400: "图像请求被拒绝，请调整描述或检查模型配置。", 401: "API 密钥无效，请检查服务端 .env。",
                     403: "此 API 项目暂无图像模型访问权限，请检查账号权限或组织验证。",
                     404: "图像模型不可用，请检查配置的模型名。", 429: "API 额度不足或请求过快，请检查额度并稍后重试。"}
-        raise ModelError(messages.get(error.code, "OpenAI 图像服务暂时不可用，请稍后重试。")) from None
-    except (TimeoutError, URLError):
-        raise ModelError("连接 OpenAI 超时或中断。请求可能已处理，请检查 API 用量后再决定是否重试。") from None
-    except (ValueError, KeyError, IndexError, TypeError, binascii.Error):
-        raise ModelError("图像服务返回了无法读取的图片。") from None
+        failure(messages.get(error.code, "OpenAI 图像服务暂时不可用，请稍后重试。"), provider_detail(error), error)
+    except (TimeoutError, URLError) as error:
+        failure("连接 OpenAI 超时或中断。请求可能已处理，请检查 API 用量后再决定是否重试。",
+                f"{type(error).__name__}: {error}", error)
+    except (ValueError, KeyError, IndexError, TypeError, binascii.Error) as error:
+        failure("图像服务返回了无法读取的图片。", f"Unreadable image response: {type(error).__name__}: {error}", error)
     finally:
         _lock.release()

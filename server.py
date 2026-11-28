@@ -192,7 +192,9 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
         except ValueError as error:
             self.send_json({"error": str(error)}, HTTPStatus.BAD_REQUEST)
         except ModelError as error:
-            logging.error("Inference failed (%s): %s", path, error.__cause__ or type(error).__name__)
+            # image_api attaches a redacted log_detail (HTTP status and provider error body).
+            detail = getattr(error, "log_detail", None) or error.__cause__ or type(error).__name__
+            logging.error("Inference failed (%s): %s", path, detail)
             self.send_json({"error": str(error)}, HTTPStatus.SERVICE_UNAVAILABLE)
         except Exception:
             logging.exception("Unexpected inference error (%s)", path)

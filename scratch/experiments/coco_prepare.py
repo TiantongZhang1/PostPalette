@@ -13,8 +13,8 @@ from zipfile import ZipFile
 import numpy as np
 from PIL import Image, ImageOps
 
-from .config import DATA
-from .prepare import write_json
+from ..config import DATA
+from ..prepare import write_json
 
 BASE = "https://s3.amazonaws.com/images.cocodataset.org/"
 
